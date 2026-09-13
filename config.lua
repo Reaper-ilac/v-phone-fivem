@@ -1842,6 +1842,22 @@ Config.Mail = {
     -- get out of step with the truth.
     maxAccounts = 3,
 
+    -- ── Deleting an address ────────────────────────────────────
+    -- A player may delete one of their own addresses from the account sheet in the app. The mail
+    -- in that address goes with it; copies other people hold are not touched.
+    --
+    -- **A deleted address is retired, not freed.** No other player can take it, because whoever
+    -- did would receive every reply still meant for the previous owner, which is an easy way to
+    -- impersonate somebody. The owner can create the same address again later, and it counts
+    -- against `maxAccounts` like a new one. Retired addresses do not count against the cap.
+    --
+    -- The one exception is a staff data wipe. `WipePhone` and the `mail` target of the admin
+    -- cleanup remove every row, retired ones included, so after a wipe the address is free
+    -- again like everything else that character held.
+    --
+    -- Off hides the button and the server refuses the request.
+    deleteAccounts = true,
+
     -- ── A domain a player buys ─────────────────────────────────
     -- The state's domains are yours to define in `reserved` above. This is the other half: a
     -- player registering a domain of their own, for a company or a newspaper, by paying for it.

@@ -1416,8 +1416,11 @@ end
 
 --- Nothing leaves the phone without a signal. Checked here rather than in the client so
 --- that standing in a tunnel actually means something.
-local function hasBars(src)
-    local p = Core and Core.GetPlayer(src)
+local function hasBars(src, fromClock)
+    -- `fromClock`: the state tick checking a player on a call. Same answer through
+    -- `Core.PeekPlayer`, which does not count as a staff member using a held phone. Requests
+    -- leave it out, and a request is what keeps an admin view session alive.
+    local p = Core and (fromClock and Core.PeekPlayer or Core.GetPlayer)(src)
     if not p then return false end
     -- A handset staff took out of service. Not an outage - the network is fine, this phone
     -- is not - but it fails at exactly the same place, so nothing downstream has to learn
@@ -2671,13 +2674,18 @@ exports('HasSignal',  function(src) return hasBars(src) end)
 
 --- The ceiling from any dead zone the player is standing in. Zones overlap on purpose:
 --- the WORST one wins, so a tunnel inside a weak-signal desert is still a tunnel.
-local function signalAt(coords)
+---
+--- `worldLive` is whether v-world counts as started, read once by a caller that asks for many
+--- players in a row. Through compat.lua's override that read is two natives, and it answers the
+--- same for every player in a pass. Left nil, it is read here.
+local function signalAt(coords, worldLive)
     -- A staff outage is a ceiling like any dead zone, and it applies whether or not the
     -- map has any zones of its own - which is why it is read BEFORE the early return.
     -- Putting it after would have made every outage silently do nothing on a server with
     -- no v-world, which is most of them.
     local bars = OutageCeiling and OutageCeiling(coords) or 4
-    if GetResourceState('v-world') ~= 'started' then return bars end
+    if worldLive == nil then worldLive = GetResourceState('v-world') == 'started' end
+    if not worldLive then return bars end
     for _, z in ipairs(V.Use('v-world').GetDeadZones() or {}) do
         if z.enabled ~= false and z.enabled ~= 0 then
             local d = #(coords - vector3(z.x + 0.0, z.y + 0.0, z.z + 0.0))
@@ -2761,7 +2769,9 @@ local function chargeRateAt(src, ped, coords)
     -- Inside a property is decided on the CLIENT, because only the housing script knows,
     -- and reported up a replicated state bag. See bridge/client/charging.lua, which knows
     -- how to ask qs-housing, ps-housing, qb-houses and the rest.
-    local state = Player(src) and Player(src).state
+    -- One proxy: every `Player(src)` builds a fresh one, and this runs per player every tick.
+    local player = Player(src)
+    local state = player and player.state
     if state and state.phoneAtHome == true then
         ChargeSource[src] = 'property'
         if not pluggedIn(src, 'property') then
@@ -2830,16 +2840,25 @@ CreateThread(function()
     while true do
         Wait(STATE_TICK * 1000)
         if Core then
+            local worldLive   -- read on the first player who needs it, then shared by the pass
             for _, raw in ipairs(GetPlayers()) do
                 local src = tonumber(raw)
-                local p = src and Core.GetPlayer(src)
-                if p then
+                -- Existence only. Nothing below reads the player: signal and charging follow the
+                -- source's own ped, so building the whole player object here was a wrapper, three
+                -- closures and a convar read per player every two seconds, thrown away. HasPlayer
+                -- answers what GetPlayer's truthiness would, admin view included, without
+                -- counting as a staff member's use of a held phone.
+                local here = src and Core.HasPlayer(src)
+                if here then
                     local ped = GetPlayerPed(src)
                     if ped and ped ~= 0 then
                         local coords = GetEntityCoords(ped)
                         local oldSignal, oldCharging = Signal[src], Charging[src]
 
-                        Signal[src] = signalAt(coords)
+                        if worldLive == nil then
+                            worldLive = GetResourceState('v-world') == 'started'
+                        end
+                        Signal[src] = signalAt(coords, worldLive)
                         -- Cached for the drain loop below, so the two never disagree about
                         -- whether this player is on a charger - and so the expensive half of
                         -- this work happens once rather than in both loops.
@@ -2878,7 +2897,7 @@ CreateThread(function()
                         -- A call cannot survive a phone with no service. Checked here rather
                         -- than on the drain tick so it ends when the signal goes, not up to
                         -- twenty seconds afterwards.
-                        if CallOf[src] and not hasBars(src) then
+                        if CallOf[src] and not hasBars(src, true) then
                             endCall(CallOf[src], 'nosignal')
                         end
                     end
@@ -2902,7 +2921,13 @@ CreateThread(function()
 
             for _, src in ipairs(GetPlayers()) do
                 src = tonumber(src)
-                local p = Core.GetPlayer(src)
+                -- The REAL character on this source, never the one an admin view redirects to.
+                -- The battery is this source's handset, and the row it persists into below must
+                -- be this character's: through the redirect, a staff member holding somebody's
+                -- phone wrote their own level into the target's vphone_kv row every tick. Same
+                -- rule as ensureNumber: a write keyed on the source must not take its identity
+                -- from the redirected player object. Not a use of the session either.
+                local p = (Core.GetPlayerReal or Core.GetPlayer)(src)
                 if p then
                     -- Whatever the state tick last measured. Not re-measured here: two answers
                     -- to "is this player on a charger" would eventually disagree, and the way
@@ -4773,7 +4798,9 @@ V.Callback('v-phone:fruitdropSend', function(src, resolve, data)
         --
         -- `data.address` only chooses WHICH of your addresses, and is checked against the ones
         -- you actually hold.
-        local chosen = mailPick(me.citizenid, data and data.address)
+        -- Strict: sharing an address the page named but you no longer hold must not quietly
+        -- share a different one of yours instead.
+        local chosen = mailPickStrict(me.citizenid, data and data.address)
         if not chosen then resolve({ error = 'noaccount' }) return end
         local prefs = prefsOf(me)
         local who = tostring((prefs and prefs.ownerName) or ''):gsub('[%c]', '')
@@ -5476,9 +5503,15 @@ end)
 -- your copy never touches anybody else's.
 --- Every address this character holds, oldest first so the list is stable between reads.
 --- Global for the same reason as `mailPick` below: it is reached from code earlier in the file.
+---
+--- A deleted address is RETIRED, not removed: its row stays with `deleted_at` set, so the UNIQUE
+--- key keeps any other player from taking it (they would receive every reply meant for the
+--- previous owner). Only a staff data wipe removes the row and frees it. Retired rows are not
+--- addresses the character holds, so they are skipped here.
 function mailAccountsOf(cid)
     local rows = MySQL.query.await(
-        'SELECT address FROM vphone_mail_accounts WHERE citizenid = ? ORDER BY id ASC', { cid }) or {}
+        'SELECT address FROM vphone_mail_accounts WHERE citizenid = ? AND deleted_at IS NULL ORDER BY id ASC',
+        { cid }) or {}
     local out = {}
     for _, r in ipairs(rows) do out[#out + 1] = r.address end
     return out
@@ -5490,7 +5523,8 @@ end
 --- "active address": a pointer in a preferences row is one more thing that can disagree with
 --- the truth, and checking ownership per request is both simpler and stricter. An unnamed or
 --- unowned address falls back to the first one rather than failing, so an older page that knows
---- nothing of this keeps working exactly as it did.
+--- nothing of this keeps working exactly as it did. Only `op me` and the contact card rely on
+--- that fallback for a NAMED address; anything that acts as an address uses `mailPickStrict`.
 --- Global, not local, and the reason matters: FruitDrop's `email` kind is defined ABOVE this
 --- point in the file, and a `local` declared later is not in scope there - the call would have
 --- read a nil global and failed at runtime with nothing to explain it. Same trap that once bound
@@ -5504,6 +5538,20 @@ function mailPick(cid, wanted)
     return accounts[1], accounts
 end
 
+--- `mailPick` for a request that acts AS the address it names.
+---
+--- Answers nil when the request names an address this character does not hold as a live one,
+--- a retired address included. Falling back there is how a page still showing a deleted address
+--- listed another mailbox under its header and sent mail from an address nobody chose. Naming
+--- no address at all still means the first one, for an older page. Global for the same reason
+--- as `mailPick`.
+function mailPickStrict(cid, wanted)
+    local chosen, accounts = mailPick(cid, wanted)
+    local named = tostring(wanted or '')
+    if named ~= '' and chosen ~= named then return nil, accounts end
+    return chosen, accounts
+end
+
 --- The domains this character has bought.
 local function mailOwnedDomains(cid)
     local rows = MySQL.query.await(
@@ -5513,8 +5561,11 @@ local function mailOwnedDomains(cid)
     return out
 end
 
+--- Who holds a live address. A retired one answers nil, so mail sent to it is refused with
+--- `noaddr` exactly like an address that never existed.
 local function cidOfAddress(addr)
-    return MySQL.scalar.await('SELECT citizenid FROM vphone_mail_accounts WHERE address = ?', { addr })
+    return MySQL.scalar.await(
+        'SELECT citizenid FROM vphone_mail_accounts WHERE address = ? AND deleted_at IS NULL', { addr })
 end
 
 --- Rows in a folder, newest first, with the mail they point at.
@@ -5647,9 +5698,19 @@ V.Callback('v-phone:mail', function(src, resolve, data)
             domains = domains, reserved = reserved, owned = owned,
             images = Config.Mail.images ~= false,
             buy = { enabled = custom.enabled == true, price = math.floor(num(custom.price, 0)) },
+            -- So the page does not offer what `deleteAccount` below would refuse.
+            canDelete = Config.Mail.deleteAccounts ~= false,
         })
         return
     end
+
+    -- Every op below acts AS an address, so one the request NAMES has to be a live address of
+    -- this character. Falling back to the first one here listed another mailbox under the header
+    -- of a deleted address and sent mail from an address nobody chose. Naming none still means
+    -- the first, for an older page; `me` above keeps its fallback so the page can recover.
+    -- `mine` equals the named address exactly when `mailPick` found it among the live ones.
+    local named = tostring((data and data.address) or '')
+    if named ~= '' and mine ~= named then resolve({ error = 'noaccount' }) return end
 
     -- Register a domain of your own, by paying for it.
     if op == 'buyDomain' then
@@ -5734,12 +5795,49 @@ V.Callback('v-phone:mail', function(src, resolve, data)
         if not mailDomainUsable(p, domain) then resolve({ error = 'domain' }) return end
 
         local addr = localpart .. '@' .. domain
-        if MySQL.scalar.await('SELECT 1 FROM vphone_mail_accounts WHERE address = ?', { addr }) then
-            resolve({ error = 'taken' }) return
+        -- A retired address is taken for everybody except the character who retired it: they
+        -- get it back, and it has already been counted against the cap above like a new one.
+        local existing = MySQL.query.await(
+            'SELECT citizenid, deleted_at FROM vphone_mail_accounts WHERE address = ? LIMIT 1', { addr }) or {}
+        local row = existing[1]
+        if row then
+            if row.deleted_at == nil or tostring(row.citizenid) ~= tostring(p.citizenid) then
+                resolve({ error = 'taken' }) return
+            end
+            MySQL.update.await([[UPDATE vphone_mail_accounts SET deleted_at = NULL, `at` = NOW()
+                WHERE address = ? AND citizenid = ? AND deleted_at IS NOT NULL]], { addr, p.citizenid })
+            Core.Log('mail', ('%s restored the address %s'):format(p.citizenid, addr), nil, p.citizenid)
+            resolve({ ok = true, address = addr })
+            return
         end
         MySQL.insert.await('INSERT INTO vphone_mail_accounts (citizenid, address) VALUES (?,?)',
             { p.citizenid, addr })
         resolve({ ok = true, address = addr })
+        return
+    end
+
+    -- Delete one of your own addresses. It is RETIRED rather than freed: the row stays so the
+    -- UNIQUE key keeps anybody else from taking it and receiving the replies meant for its owner.
+    -- Only this address's mailbox rows go, which are this character's copies; the same mail in
+    -- anybody else's box is untouched.
+    if op == 'deleteAccount' then
+        if Config.Mail.deleteAccounts == false then resolve({ error = 'disabled' }) return end
+        -- Checked against the caller's live addresses, never taken from the page. `mine` is not
+        -- used here on purpose: it falls back to the first address when the named one is not
+        -- owned, and a fallback is the wrong answer to "delete this one".
+        local wanted = tostring((data and data.address) or '')
+        local owned = false
+        for _, a in ipairs(accounts) do
+            if a == wanted then owned = true break end
+        end
+        if wanted == '' or not owned then resolve({ error = 'noaccount' }) return end
+
+        MySQL.update.await(
+            'UPDATE vphone_mail_accounts SET deleted_at = NOW() WHERE address = ? AND citizenid = ? AND deleted_at IS NULL',
+            { wanted, p.citizenid })
+        MySQL.update.await('DELETE FROM vphone_mail_box WHERE address = ?', { wanted })
+        Core.Log('mail', ('%s deleted the address %s'):format(p.citizenid, wanted), nil, p.citizenid)
+        resolve({ ok = true })
         return
     end
 
@@ -6829,7 +6927,10 @@ end)
 
 AddEventHandler('playerDropped', function()
     local src = source
-    local p = Core.GetPlayer(src)
+    -- The real character, for the same reason as the drain tick: this row is the source's own
+    -- battery. Through the redirect a pending admin view expiry answered nil and the level of a
+    -- staff member who left at that moment was never saved.
+    local p = (Core.GetPlayerReal or Core.GetPlayer)(src)
     if p and Battery[src] then
         Bridge.KvSetSync(p.citizenid, 'battery', math.floor(Battery[src]))
     end
@@ -6880,7 +6981,9 @@ AddEventHandler('onResourceStop', function(resource)
     -- read nothing and fell back to full.
     for _, raw in ipairs(GetPlayers()) do
         local src = tonumber(raw)
-        local player = src and Core.GetPlayer(src)
+        -- The real character: through the admin view redirect a staff member's level was written
+        -- into the row of the character they were holding, racing that player's own save.
+        local player = src and (Core.GetPlayerReal or Core.GetPlayer)(src)
         if player and Battery[src] then
             Bridge.KvSetSync(player.citizenid, 'battery', math.floor(Battery[src]))
         end
@@ -7073,6 +7176,9 @@ CreateThread(function()
         `citizenid` VARCHAR(64) NOT NULL,
         `address`   VARCHAR(64) NOT NULL,
         `at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        -- Set when the owner deletes the address. The row is kept so the UNIQUE key keeps the
+        -- address retired: nobody else may take it and read the replies meant for its owner.
+        `deleted_at` TIMESTAMP NULL DEFAULT NULL,
         PRIMARY KEY (`id`), UNIQUE KEY `address` (`address`), KEY `owner` (`citizenid`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4]])
 
@@ -7097,6 +7203,21 @@ CreateThread(function()
             .. '  ALTER TABLE vphone_mail_accounts DROP PRIMARY KEY,\n'
             .. '    ADD COLUMN id INT UNSIGNED NOT NULL AUTO_INCREMENT FIRST,\n'
             .. '    ADD PRIMARY KEY (id), ADD KEY owner (citizenid);')
+    end
+
+    -- `deleted_at` on a table that predates deleting an address. After the id migration above,
+    -- and guarded the same way so it runs exactly once. Nullable with a NULL default, so every
+    -- existing address stays live and no row is rewritten.
+    if not MySQL.scalar.await([[SELECT 1 FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'vphone_mail_accounts'
+          AND COLUMN_NAME = 'deleted_at' LIMIT 1]]) then
+        local ok = pcall(function()
+            MySQL.query.await([[ALTER TABLE `vphone_mail_accounts`
+                ADD COLUMN `deleted_at` TIMESTAMP NULL DEFAULT NULL]])
+        end)
+        print(ok and '[v-phone] mail: vphone_mail_accounts can now retire a deleted address'
+            or '[v-phone] mail: could NOT alter vphone_mail_accounts. Run this once by hand:\n'
+            .. '  ALTER TABLE vphone_mail_accounts ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL;')
     end
 
     -- A domain a player registered. Unique on the domain, because the whole point of buying

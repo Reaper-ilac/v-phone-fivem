@@ -27,6 +27,7 @@ syntax error should not cost five minutes of screenshots to discover.
     test-mediaref    who still shows a photograph, before the sweep deletes it
     test-verify      who may buy the blue tick, and that the orange one never moves with it
     test-camera      what a photograph does when the upload host is slow or dead
+    test-mail-delete a deleted mail address is retired, never handed to somebody else
     preview          the page built for a browser
     run-probe        can a cursor reach every control in all 37 apps
     probe-input      real mouse input through the compositor
@@ -39,6 +40,15 @@ import os
 import subprocess
 import sys
 import time
+
+# **UTF-8 out, whatever the console says.** Redirected into a file on Windows, stdout falls back
+# to the ANSI code page, and the first character outside it - a box-drawing rule, an accent in a
+# French label a test echoes, a tick mark - raised UnicodeEncodeError and ended the run. A suite
+# that passed then read as a crash, which is worse than one that fails honestly. `errors` is
+# `replace` so an unencodable character becomes a marker rather than a traceback.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAST = '--fast' in sys.argv
@@ -147,6 +157,9 @@ run('test-retention', [sys.executable, 'tools/test-social-retention.py'])
 run('test-mediaref', [sys.executable, 'tools/test-mediaref.py'])
 run('test-verify', [sys.executable, 'tools/test-verify.py'])
 run('test-camera', [sys.executable, 'tools/test-camera.py'])
+run('test-mail-delete', [sys.executable, 'tools/test-mail-delete.py'])
+run('test-hotpath', [sys.executable, 'tools/test-hotpath.py'])
+run('test-strings', [sys.executable, 'tools/test-strings.py'])
 run('check-fr', [sys.executable, 'tools/check-fr.py'])
 
 # ── The ones that need a browser ──────────────────────────────────────────

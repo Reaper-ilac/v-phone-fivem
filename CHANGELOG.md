@@ -4,6 +4,311 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.0] - 2026-09-13
+
+### Added
+
+- **A mail address can be deleted (#11).** In Mail, tap the address at the top of the inbox, then
+  **Delete this address** at the bottom of the accounts sheet, and confirm. The mail in that address
+  goes with it. A copy of the same mail somebody else holds stays where it is, because it is theirs.
+  **A deleted address is retired, not freed.** Nobody else can register it, and mail sent to it is
+  refused exactly like mail to an address that never existed: whoever took it next would otherwise
+  receive every reply still meant for the previous owner, which is an easy way to impersonate
+  somebody. Its owner can create it again, and it then counts against `Config.Mail.maxAccounts` like
+  a new one; while it is retired it counts against nothing. The only thing that frees it is a staff
+  data wipe, the `WipePhone` export or `phoneclean mail confirm`, which remove every row, retired
+  ones included.
+  `Config.Mail.deleteAccounts` switches it, on by default. Off hides the button and the server
+  refuses the request, so a forged one gets nowhere either. The address at the top of the inbox now
+  opens the accounts sheet on a server that allows a single address too, because that sheet is
+  where the button lives; it keeps its share button, so nothing is lost by the extra tap.
+  The database needs one new column, `deleted_at` on `vphone_mail_accounts`, and it is added on
+  boot. Every existing address stays live and no row is rewritten. If your database user may not
+  alter tables, the console prints the one statement to run by hand.
+
+- **A post can be deleted from every place a post is shown (#12).** Your own posts carry a
+  **...** button beside your name. It opens **Post options**, where **Delete post** sits above a
+  line saying what goes with it, its likes, comments and reposts, and then it asks you to confirm.
+  It is there in nine places: the Bleeter feed, a profile, a hashtag feed and Saved, and the
+  Snapmatic feed, a profile, a hashtag feed, Saved and Explore. A post that is not yours offers
+  neither the dots nor the trash. The small trash in the card's footer stays and leads to the same
+  confirmation; the dots are simply where a player looks for "delete this", which that glyph never
+  was.
+
+### Fixed
+
+- **Deleting a post opened from Saved or Explore did nothing.** A tile in those tabs opens the post
+  on its own in a sheet, and that sheet wired the like, the save, the comments and the name by hand
+  and nothing else: the trash drew, took the press and did nothing, on the only path to a single
+  post from those two tabs. It now gets the same wiring as every other card, so delete works there,
+  and so do repost, share, hashtags and mentions.
+  **Cancel goes back to the post.** Cancel on the post options or on the delete confirmation of a
+  post shown in a sheet closed it and dropped you on whatever was underneath. It now raises the post
+  again, with the like or the save you just gave it still showing.
+- **Bleeter's Saved tab drew text posts as empty squares.** The grid paints a post's picture as the
+  tile, and a bleet with no picture had nothing to paint. A post without a picture now shows its
+  opening words.
+- **Mail acted as an address the page named but the character does not hold.** The server fell back
+  to the character's first address instead of refusing, so a page still showing a deleted address
+  listed a different mailbox under its header and sent mail from an address nobody chose. A request
+  naming an address this character does not hold, a retired one included, is now refused, and the
+  app starts again from a live address. The FruitDrop email share follows the same rule and can no
+  longer share a different address from the one asked for. A request naming no address at all still
+  acts as the first one, so an older page keeps working.
+- **An admin view never ran out while the staff member stayed connected.** `viewSeconds` is there so
+  a forgotten session does not last all night, but the server's state tick asked every two seconds
+  who each player was, that question counted as the session being used, and use pushed the clock
+  back. A clock no longer counts: the state tick, its call check, the bank balance poll and a
+  FruitBrawl payout all read a held phone without extending the session. It now runs out at
+  `viewSeconds`, and a genuine request from the staff member still extends it.
+  **And a session that ends without being asked closes the handset.** Run out, caught by the sweep,
+  or the viewed player disconnecting: the staff member's phone is closed at once, and the first
+  request after an end nobody noticed is refused, so an action can never land on the staff member's
+  own character under a banner still naming somebody else. That refusal is cleared when a player
+  disconnects, so the next player given the same server id is not refused for nothing.
+- **An admin view wrote the staff member's battery into the viewed player's saved row.** The drain
+  tick found the player through the same redirect every request uses, so a staff member holding
+  somebody's phone saved their own level into that character's row, and the save on resource stop
+  did the same. The disconnect save had its own version: a staff member who left at the moment a
+  session ran out had no level saved at all. Battery is always saved to the real character on that
+  source now.
+- **ox_core: every player still on the character selection screen shared one battery.** ox_core
+  hands back a player object before a character is chosen, with no `charId`, and the missing id
+  became the string "nil": one saved row for all of them, each writing over the others. A player
+  with no character id is no longer treated as a loaded character.
+- **Changing language pushed the old strings.** FiveM runs a state bag change handler before it
+  stores the new value, and the handler read the bag, so the page received the previous language's
+  table labelled with the new one until the next time the phone opened hid it. The table is built
+  from the value the handler is handed.
+- **`tools/test-all.py` crashed on Windows when its output was redirected to a file.** Redirected
+  output falls back to the ANSI code page, and the first character outside it ended the run, so a
+  suite that passed read as a crash. It writes UTF-8 whatever the console says.
+
+### Performance
+
+Every figure below was measured from the repository with the real files. Frame times in game were
+not measured, and nothing here claims a number of milliseconds on your server. To see what this
+release changes there, compare `resmon` before and after the update with the phone closed, with it
+open, and while notifications are arriving.
+
+- **The string table stopped riding on messages that did not need it.** The whole locale table,
+  127 KB of JSON in French and 117 KB in English, was attached to most messages sent to the page,
+  which almost always already held it and threw the copy away. It is now sent only until the page
+  confirms it holds the current language, and that belief is built from what the page itself says,
+  because NUI drops a message sent to a page that is still loading without a word. Bytes sent to
+  the page:
+  - a notification received with the phone away: 255,169 to 325
+  - a Zuber order update with the phone away: 382,688 to 349
+  - a 911 alert with its banner: 255,233 to 395
+  - opening the phone: about 127,500 to 124
+
+  Each copy saved is an estimated half millisecond of JSON encoding on the game thread, plus a
+  similar parse in the page. That half millisecond is an estimate, because FiveM's encoder is
+  written in C and its absolute time differs. The byte counts are not estimates.
+
+- **A translation stopped re-reading the state bag.** Every lookup read the player's language from
+  the state bag again: 592 bytes of garbage and a decoded native read per call, 60 times a second
+  near a payphone or a verification desk and 240 times a second in the selfie camera. After the
+  first lookup it reads nothing, and a change handler keeps the value current.
+
+- **The open phone allocates nothing per frame.** The loop that holds the controls while the phone
+  is open built a table every frame, 60 a second; it builds none. The hold animation is checked
+  every 250 ms instead of every frame, which is still shorter than the blend that brings it back,
+  and closing the phone twice quickly no longer starts a second pause guard.
+
+- **The server's state tick, every two seconds, does less per player.** Per minute, for 64 players:
+  - player wrappers built only to find out whether a player exists: 1,920 to 0, and with them 5,760
+    closures and 1,920 convar reads to 0
+  - cross-resource calls: ox_core 3,840 to 1,920, ESX 5,760 to 1,920
+  - natives for a player on foot: 13,470 to 7,770 (standalone 21,150 to 7,770)
+  - whether v-world is started, for the dead zones, is read once per pass instead of once per
+    player: 3,840 natives to 60
+  - the charger check stopped calling an export back into the phone itself for a battery level it
+    already holds: 1,920 calls to 0 for players in a car or at home
+
+  The players ticked and every value pushed are identical to 1.6.4, and a test runs the old code and
+  the new side by side on one fixture to check it.
+
+### Notes
+
+- **Upgrading from 1.6.4.** Nothing to import: the `deleted_at` column is added on boot.
+  `Config.Mail.deleteAccounts` is new, and an edited `config.lua` that does not have it behaves as
+  `true`. To keep the old behaviour, where an address could not be deleted, set it to `false`.
+
+- **Three new suites, each shown to fail when the code it guards is broken.**
+  `tools/test-mail-delete.py` runs the Mail code under real Lua against a database that stores rows,
+  and holds that a deleted address is retired and never handed to somebody else.
+  `tools/test-strings.py` holds that the string table travels only when the page lacks it and that a
+  language change pushes the new one. `tools/test-hotpath.py` counts what the state tick costs
+  against the previous code, and covers the admin view clocks and whose row a battery is saved to.
+  All three run from `tools/test-all.py`. `tools/probe-input.js` gains a section that presses the
+  footer trash and the three dots for real, in a feed and in the post sheet, and ends on Cancel
+  every time.
+
+---
+
+### Ajouts (miroir francais)
+
+- **Une adresse mail peut être supprimée (#11).** Dans Mail, touchez l'adresse en haut de la boîte
+  de réception, puis **Supprimer cette adresse** en bas de la feuille des comptes, et confirmez. Les
+  mails de cette adresse partent avec elle. La copie d'un même mail que détient quelqu'un d'autre
+  reste où elle est, parce que c'est la sienne.
+  **Une adresse supprimée est retirée, pas libérée.** Personne d'autre ne peut l'enregistrer, et un
+  mail qui lui est envoyé est refusé exactement comme un mail vers une adresse qui n'a jamais
+  existé : sinon, celui qui la prendrait ensuite recevrait toutes les réponses encore destinées à
+  l'ancien titulaire, ce qui est un moyen facile de se faire passer pour quelqu'un. Son titulaire
+  peut la recréer, et elle compte alors dans `Config.Mail.maxAccounts` comme une nouvelle ; tant
+  qu'elle est retirée, elle ne compte nulle part. La seule chose qui la libère est un effacement de
+  données par le staff, l'export `WipePhone` ou `phoneclean mail confirm`, qui retirent toutes les
+  lignes, adresses retirées comprises.
+  `Config.Mail.deleteAccounts` l'active, activé par défaut. Désactivé, le bouton disparaît et le
+  serveur refuse la requête, donc une requête forgée n'aboutit pas non plus. L'adresse en haut de
+  la boîte de réception ouvre désormais la feuille des comptes aussi sur un serveur qui n'autorise
+  qu'une adresse, parce que c'est là que se trouve le bouton ; la feuille garde son bouton de
+  partage, donc l'appui de plus ne fait rien perdre.
+  La base de données a besoin d'une nouvelle colonne, `deleted_at` sur `vphone_mail_accounts`, et
+  elle est ajoutée au démarrage. Toutes les adresses existantes restent actives et aucune ligne
+  n'est réécrite. Si votre utilisateur de base de données n'a pas le droit de modifier une table,
+  la console affiche l'unique requête à lancer à la main.
+
+- **Une publication peut être supprimée partout où une publication s'affiche (#12).** Vos propres
+  publications portent un bouton **...** à côté de votre nom. Il ouvre **Options de la
+  publication**, où **Supprimer la publication** est suivi d'une ligne qui dit ce qui part avec
+  elle, ses J'aime, ses commentaires et ses republications, puis une confirmation est demandée. Il
+  est présent à neuf endroits : le fil Bleeter, un profil, un fil de hashtag et les Enregistrés,
+  puis le fil Snapmatic, un profil, un fil de hashtag, les Enregistrés et Explorer. Une publication
+  qui n'est pas la vôtre n'offre ni les points ni la corbeille. La petite corbeille du pied de
+  carte reste et mène à la même confirmation ; les points sont simplement l'endroit où un joueur
+  cherche « supprimer », ce que ce petit pictogramme n'a jamais été.
+
+### Correctifs (miroir francais)
+
+- **Supprimer une publication ouverte depuis les Enregistrés ou Explorer ne faisait rien.** Une
+  vignette de ces onglets ouvre la publication seule dans une feuille, et cette feuille branchait à
+  la main le J'aime, l'enregistrement, les commentaires et le nom, et rien d'autre : la corbeille
+  s'affichait, prenait l'appui et ne faisait rien, sur le seul chemin vers une publication isolée
+  depuis ces deux onglets. Elle reçoit maintenant le même branchement que toutes les autres cartes :
+  la suppression y fonctionne, tout comme la republication, le partage, les hashtags et les
+  mentions.
+  **Annuler ramène à la publication.** Annuler sur les options ou sur la confirmation de
+  suppression d'une publication affichée dans une feuille la fermait et laissait le joueur sur ce
+  qu'il y avait dessous. La publication revient désormais, avec le J'aime ou l'enregistrement qu'on
+  vient de lui donner toujours affiché.
+- **Les Enregistrés de Bleeter dessinaient les publications texte comme des carrés vides.** La
+  grille peint l'image d'une publication comme vignette, et un bleet sans image n'avait rien à
+  peindre. Une publication sans image affiche maintenant ses premiers mots.
+- **Mail agissait au nom d'une adresse que la page nommait mais que le personnage ne détient pas.**
+  Le serveur se rabattait sur la première adresse du personnage au lieu de refuser : une page qui
+  affichait encore une adresse supprimée listait une autre boîte sous son en-tête et envoyait des
+  mails depuis une adresse que personne n'avait choisie. Une requête qui nomme une adresse que ce
+  personnage ne détient pas, adresse retirée comprise, est maintenant refusée, et l'application
+  repart d'une adresse active. Le partage d'adresse par FruitDrop suit la même règle et ne peut plus
+  partager une autre adresse que celle demandée. Une requête qui ne nomme aucune adresse agit
+  toujours au nom de la première, pour qu'une page plus ancienne continue de fonctionner.
+- **Une consultation admin n'expirait jamais tant que le membre du staff restait connecté.**
+  `viewSeconds` existe pour qu'une session oubliée ne dure pas toute la nuit, mais la boucle d'état
+  du serveur demandait toutes les deux secondes qui était chaque joueur, cette question comptait
+  comme une utilisation de la session, et une utilisation repoussait l'échéance. Une horloge ne
+  compte plus : la boucle d'état, sa vérification d'appel, le relevé du solde bancaire et un gain
+  FruitBrawl lisent un téléphone consulté sans prolonger la session. Elle expire maintenant à
+  `viewSeconds`, et une vraie requête du membre du staff la prolonge toujours.
+  **Et une session qui se termine sans qu'on l'ait demandé ferme le téléphone.** Expirée, relevée
+  par le balayage, ou le joueur consulté qui se déconnecte : le téléphone du membre du staff se
+  ferme aussitôt, et la première requête après une fin que personne n'a remarquée est refusée, pour
+  qu'une action ne puisse jamais toucher le propre personnage du membre du staff sous un bandeau
+  qui nomme encore quelqu'un d'autre. Ce refus est effacé quand un joueur se déconnecte, pour que le
+  joueur suivant qui reçoit le même identifiant serveur ne soit pas refusé pour rien.
+- **Une consultation admin écrivait la batterie du membre du staff dans la ligne du joueur
+  consulté.** La boucle de décharge trouvait le joueur par la même redirection que chaque requête,
+  donc un membre du staff qui tenait le téléphone de quelqu'un enregistrait son propre niveau dans
+  la ligne de ce personnage, et la sauvegarde à l'arrêt de la ressource faisait de même. La
+  sauvegarde à la déconnexion avait sa propre variante : un membre du staff parti au moment où une
+  session expirait n'avait aucun niveau enregistré. La batterie est désormais toujours enregistrée
+  pour le vrai personnage de cette source.
+- **ox_core : tous les joueurs encore sur l'écran de sélection de personnage partageaient une seule
+  batterie.** ox_core renvoie un objet joueur avant qu'un personnage soit choisi, sans `charId`, et
+  l'identifiant manquant devenait la chaîne "nil" : une seule ligne enregistrée pour tous, chacun
+  écrasant les autres. Un joueur sans identifiant de personnage n'est plus traité comme un
+  personnage chargé.
+- **Changer de langue envoyait les anciens textes.** FiveM exécute un gestionnaire de changement de
+  state bag avant d'enregistrer la nouvelle valeur, et ce gestionnaire relisait le state bag : la
+  page recevait la table de la langue précédente étiquetée avec la nouvelle, jusqu'à ce que la
+  prochaine ouverture du téléphone le masque. La table est construite à partir de la valeur transmise
+  au gestionnaire.
+- **`tools/test-all.py` plantait sous Windows quand sa sortie était redirigée vers un fichier.** Une
+  sortie redirigée retombe sur la page de code ANSI, et le premier caractère hors de celle-ci
+  arrêtait l'exécution : une suite qui passait ressemblait à un plantage. La sortie est en UTF-8
+  quoi qu'en dise la console.
+
+### Performances (miroir francais)
+
+Tous les chiffres ci-dessous ont été mesurés depuis le dépôt, avec les vrais fichiers. Les temps
+d'image en jeu n'ont pas été mesurés, et rien ici n'annonce un nombre de millisecondes sur votre
+serveur. Pour voir ce que cette version y change, comparez `resmon` avant et après la mise à jour,
+téléphone fermé, téléphone ouvert, et pendant que des notifications arrivent.
+
+- **La table des textes ne voyage plus avec des messages qui n'en avaient pas besoin.** Toute la
+  table de locale, 127 Ko de JSON en français et 117 Ko en anglais, accompagnait la plupart des
+  messages envoyés à la page, qui la détenait presque toujours déjà et jetait la copie. Elle n'est
+  plus envoyée que jusqu'à ce que la page confirme détenir la langue en cours, et cette certitude
+  ne se fonde que sur ce que dit la page elle-même, parce que NUI jette sans rien dire un message
+  envoyé à une page encore en chargement. Octets envoyés à la page :
+  - une notification reçue téléphone rangé : de 255 169 à 325
+  - une mise à jour de commande Zuber téléphone rangé : de 382 688 à 349
+  - une alerte 911 avec sa bannière : de 255 233 à 395
+  - ouvrir le téléphone : d'environ 127 500 à 124
+
+  Chaque copie évitée représente environ une demi-milliseconde estimée d'encodage JSON sur le fil du
+  jeu, plus une analyse comparable dans la page. Cette demi-milliseconde est une estimation, parce
+  que l'encodeur de FiveM est écrit en C et que son temps absolu diffère. Les nombres d'octets n'en
+  sont pas.
+
+- **Une traduction ne relit plus le state bag.** Chaque recherche relisait la langue du joueur dans
+  le state bag : 592 octets de déchets et une lecture native décodée par appel, 60 fois par seconde
+  près d'une cabine ou d'un guichet de certification et 240 fois par seconde dans la caméra selfie.
+  Après la première recherche, plus rien n'est lu, et un gestionnaire de changement tient la valeur
+  à jour.
+
+- **Le téléphone ouvert n'alloue plus rien à chaque image.** La boucle qui retient les commandes
+  pendant que le téléphone est ouvert construisait une table à chaque image, 60 par seconde ; elle
+  n'en construit plus aucune. L'animation de tenue est vérifiée toutes les 250 ms au lieu de chaque
+  image, ce qui reste plus court que la transition qui la rétablit, et fermer le téléphone deux fois
+  rapidement ne lance plus une seconde garde de pause.
+
+- **La boucle d'état du serveur, toutes les deux secondes, en fait moins par joueur.** Par minute,
+  pour 64 joueurs :
+  - objets joueur construits seulement pour savoir si un joueur existe : de 1 920 à 0, et avec eux
+    5 760 closures et 1 920 lectures de convar à 0
+  - appels entre ressources : ox_core de 3 840 à 1 920, ESX de 5 760 à 1 920
+  - natives pour un joueur à pied : de 13 470 à 7 770 (standalone de 21 150 à 7 770)
+  - l'état de v-world, pour les zones mortes, est lu une fois par passage au lieu d'une fois par
+    joueur : de 3 840 natives à 60
+  - la vérification du chargeur n'appelle plus un export du téléphone lui-même pour un niveau de
+    batterie qu'il détient déjà : de 1 920 appels à 0 pour les joueurs en voiture ou chez eux
+
+  Les joueurs traités et chaque valeur envoyée sont identiques à la 1.6.4, et un test exécute
+  l'ancien code et le nouveau côte à côte sur le même jeu de données pour le vérifier.
+
+### Notes (miroir francais)
+
+- **Mise à jour depuis la 1.6.4.** Rien à importer : la colonne `deleted_at` est ajoutée au
+  démarrage. `Config.Mail.deleteAccounts` est nouveau, et un `config.lua` modifié qui ne le contient
+  pas se comporte comme `true`. Pour garder l'ancien comportement, où une adresse ne pouvait pas
+  être supprimée, réglez-le sur `false`.
+
+- **Trois nouvelles suites, chacune montrée en échec quand le code qu'elle protège est cassé.**
+  `tools/test-mail-delete.py` exécute le code de Mail sous un vrai Lua contre une base qui stocke
+  réellement des lignes, et vérifie qu'une adresse supprimée est retirée et jamais donnée à
+  quelqu'un d'autre. `tools/test-strings.py` vérifie que la table des textes ne voyage que lorsque
+  la page ne l'a pas et qu'un changement de langue envoie la nouvelle. `tools/test-hotpath.py`
+  compte ce que coûte la boucle d'état face à l'ancien code, et couvre les horloges de la
+  consultation admin et la ligne dans laquelle une batterie est enregistrée. Les trois tournent
+  depuis `tools/test-all.py`. `tools/probe-input.js` gagne une section qui appuie pour de vrai sur
+  la corbeille du pied de carte et sur les trois points, dans un fil et dans la feuille d'une
+  publication, et termine chaque fois sur Annuler.
+
+---
+
 ## [1.6.4] - 2026-08-06
 
 ### Changed

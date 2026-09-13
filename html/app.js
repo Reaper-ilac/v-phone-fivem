@@ -140,6 +140,22 @@ let shadeManage = false;
 // only knows an icon, so it falls back to that.
 function notifApp(b) { return b.app || b.icon || 'dot'; }
 
+/// The text of a notification card, worked out when the card is PAINTED rather than when it came in.
+///
+/// A card's title or body may be a function, and every card the page words itself passes one.
+/// A card filed while this page held no string table - it reloaded while the client believed it
+/// still held one, and the answer was slow or lost - used to keep "Zuber St Preparing" for the
+/// rest of the session, because its text was a string computed from an empty table. Worded at
+/// paint, the same card reads correctly on the next paint after the table lands.
+///
+/// Holding such messages until a table arrived was the other way to do it, and was not taken: a
+/// lost answer costs seconds to recover, so a hold long enough to cover it hides an alert for
+/// that long, and a hold released at a shorter ceiling freezes the same wrong text anyway.
+function nText(v) {
+  const out = typeof v === 'function' ? v() : v;
+  return out == null ? '' : String(out);
+}
+
 // A player can silence an app from the shade. A muted app still runs; it just does not
 // light the island or land in the centre. The list lives in prefs, so it survives.
 // ══ Notifications, per app ═════════════════════════════════════
@@ -222,13 +238,17 @@ let warnedNoStrings = false;
 const L = (k) => {
   const hit = S[k];
   if (hit) return hit;
-  if (!warnedNoStrings && !Object.keys(S || {}).length) {
-    warnedNoStrings = true;
-    console.error('[v-phone] the string table is empty, so every label is a guess at its key. '
-      + 'The page asked the client for it on load; if this persists the client answered with '
-      + 'nothing - check that locales/*.lua are in fxmanifest.lua shared_scripts.');
-    // Ask again. The most likely reason for an empty table is that this page loaded before the
-    // client was ready to answer, and one more attempt costs nothing.
+  if (!hasStrings()) {
+    if (!warnedNoStrings) {
+      warnedNoStrings = true;
+      console.error('[v-phone] the string table is empty, so every label is a guess at its key. '
+        + 'The page asked the client for it on load; if this persists the client answered with '
+        + 'nothing - check that locales/*.lua are in fxmanifest.lua shared_scripts.');
+    }
+    // Ask again, on every miss against an empty table and not just the first. The client only
+    // attaches the table to a message when it believes this page lacks it, so a page that gave
+    // up after one attempt could stay blank all session. `requestStrings` is throttled, so a
+    // view full of misses still asks once.
     requestStrings();
   }
   return humaniseKey(k);
@@ -3964,6 +3984,7 @@ let mailImages = true;      // whether the server allows an attachment at all
 // that reads as "my mail went from the wrong account" and is impossible to spot in a diff.
 const mailPost = (op, extra) => post('mail', Object.assign({ op, address: mailAcc }, extra || {}));
 let mailMe = null;          // the last `me` answer, for the domain sheet
+let mailNoAccountFor = null;   // the address a `noaccount` refusal was last recovered from
 
 // Buying a domain of your own.
 //
@@ -4066,8 +4087,11 @@ async function mailList() {
   tabbar(MAIL_TABS, mailFolder, (t) => { mailFolder = t; mailList(); });
   // The address you are reading, and the way to the others. Already on screen; now it is the
   // control too, which is where somebody would look for it.
+  // Deleting lives in the account sheet too, so a server capped at one address still needs a
+  // way into it. The sheet keeps the share button, so nothing is lost by the extra tap.
   const many = ((mailMe && mailMe.accounts) || []).length > 1
-    || ((mailMe && mailMe.accounts) || []).length < (Number(mailMe && mailMe.maxAccounts) || 1);
+    || ((mailMe && mailMe.accounts) || []).length < (Number(mailMe && mailMe.maxAccounts) || 1)
+    || !!(mailMe && mailMe.canDelete);
   body('<button class="mailaddr' + (many ? ' pick' : '') + '" id="maddr" type="button">'
     + esc(mailAcc || '') + (many ? svg('chevron') : '') + '</button><div id="mlist"></div>');
   if (many) byId('maddr').addEventListener('click', () => mailAccountSheet());
@@ -4078,6 +4102,22 @@ async function mailList() {
     : await mailPost('list', { folder: mailFolder });
   const host = byId('mlist');
   if (!host) return;
+  // The address on screen is no longer one this character holds (deleted from here, from
+  // another session, or by staff). The server refuses to act as it; start again from a live one.
+  //
+  // Once per address. A `me` answer that keeps naming an address the list keeps refusing would
+  // otherwise have the two call each other for ever; the second refusal shows the error instead.
+  if (r && r.error === 'noaccount' && mailAcc) {
+    if (mailNoAccountFor !== mailAcc) {
+      mailNoAccountFor = mailAcc;
+      mailAcc = null;
+      RENDER.mail();
+      return;
+    }
+    host.innerHTML = UI.empty(L('ph.err_noaccount'), 'mail');
+    return;
+  }
+  if (r && !r.error) mailNoAccountFor = null;
   const list = (r && r.mail) || [];
   if (!list.length) { host.innerHTML = UI.empty(L('ph.mail_empty'), 'mail'); return; }
 
@@ -4159,7 +4199,9 @@ function mailAccountSheet() {
     UI.button(L('ph.mail_share'), 'macc_share', 'plain') +
     (accounts.length < cap
       ? UI.button(L('ph.mail_add_account'), 'macc_add', 'tinted')
-      : '<div class="groupfoot">' + esc(L('ph.mail_account_cap').replace('{max}', String(cap))) + '</div>'),
+      : '<div class="groupfoot">' + esc(L('ph.mail_account_cap').replace('{max}', String(cap))) + '</div>') +
+    // Only offered when the server says it will accept it. Ownership is still checked there.
+    (me.canDelete && mailAcc ? UI.button(L('ph.mail_delete_account'), 'macc_del', 'destructive') : ''),
     () => {
       const epoch = sheetEpoch;
       rows('.row[data-acc]', () => {});
@@ -4181,6 +4223,19 @@ function mailAccountSheet() {
         if (!closeSheet(false, epoch)) return;
         // The same screen that creates the first address creates the next one.
         mailSignup(me.domains || [], me.reserved || {}, me.owned || {}, me.buy || {});
+      });
+      if (byId('macc_del')) byId('macc_del').addEventListener('click', () => {
+        if (!closeSheet(false, epoch)) return;
+        const addr = mailAcc;
+        confirmSheet(L('ph.mail_delete_account_ask').replace('{address}', addr), L('ph.delete'), async () => {
+          const r = await post('mail', { op: 'deleteAccount', address: addr });
+          if (!r || !r.ok) { toast(L('ph.err_' + ((r && r.error) || 'x'))); return; }
+          toast(L('ph.mail_account_deleted'));
+          // `me` falls back to another address, or to the sign up screen when none is left.
+          mailAcc = null;
+          mailFolder = 'inbox';
+          RENDER.mail();
+        });
       });
     });
 }
@@ -4998,7 +5053,7 @@ function emergencyAlert(a) {
   banner({
     app: 'settings',
     icon: 'warning',
-    title: kind,
+    title: () => a.kind || L('ph.emergency_default'),
     body: [a.title, a.body].filter(Boolean).join(' - '),
   });
 
@@ -5120,29 +5175,137 @@ function emergencyKlaxon() {
 // exactly as before, and a copy still yields the real number - the problem being solved is
 // what sits on camera, not what the phone knows.
 // ══ Asking for the strings ═════════════════════════════════════
-// The client sends the string table with every `open`, which is right and is not enough: this
-// page can be drawn before an `open` ever arrives - a payphone panel, an incoming call, a
-// notification banner - and a message sent to a page that has not finished loading is dropped
-// silently by NUI, with no error anywhere. That is what "restart the resource and it works"
-// means: the restart reloads the page and re-sends.
+// The string table is about 120 KB, and the client attaches it to a message only when it does
+// not believe this page holds the player's language. That belief is built from what this page
+// says and nothing else - the request below, and `stringsHeld` once a table has been taken from
+// a message - because a message sent to a page that has not finished loading is dropped
+// silently by NUI, with no error anywhere.
 //
-// So the page asks. On load, and again if it ever finds itself rendering with nothing.
-let strungAt = 0;
-async function requestStrings() {
-  // Once every two seconds at most: `L` calls this on a miss, and a view full of misses would
-  // otherwise ask once per label.
-  const now = Date.now();
-  if (now - strungAt < 2000) return;
-  strungAt = now;
-  const r = await post('strings');
-  if (r && r.strings && Object.keys(r.strings).length) {
-    S = r.strings;
-    warnedNoStrings = false;
-    if (r.locale) state.locale = r.locale;
-    // Repaint whatever is on screen, or the labels drawn before the table arrived stay wrong.
-    if (openApp && RENDER[openApp.id]) RENDER[openApp.id]();
-    else if (typeof paintLockMeta === 'function') paintLockMeta();
+// So the page asks. On load, again if it ever finds itself rendering with nothing, and on a
+// backoff for as long as the table stays empty: the client may simply not be ready yet.
+
+/// Is there any string at all? Stops at the first key, because `L` asks this on every miss and
+/// `Object.keys` on the whole table would be an array of 2,700 strings each time.
+function hasStrings() {
+  for (const k in S) return k !== undefined;
+  return false;
+}
+
+/// Take a table that arrived on a message or an answer, if one did.
+///
+/// Taken even over a table this page already holds: the client attaches one only when it
+/// believes this page lacks the current language, which is exactly how a language change lands.
+/// Acknowledged every time, because that acknowledgement is the only thing that lets the client
+/// stop sending it.
+function adoptStrings(d) {
+  const t = d && d.strings;
+  if (!t || typeof t !== 'object') return false;
+  let any = false;
+  for (const k in t) { any = k !== undefined; break; }
+  if (!any) return false;
+  S = t;
+  warnedNoStrings = false;
+  if (d.locale) state.locale = d.locale;
+  post('stringsHeld', { locale: d.locale || '' });
+  scheduleRepaintStrings();
+  return true;
+}
+
+/// The labels that live outside every app and that nothing else repaints.
+///
+/// Painted by `open` and again after a table is adopted. An `open` can arrive without a table -
+/// after this page reloaded while the client believed it still held one - and a label set once
+/// from an empty table used to stay a humanised key ("Search" on a French phone) until the next
+/// `open`. The document language follows the table for the same reason.
+function paintChrome() {
+  const locale = String(state.locale || state.lang || 'en').trim().replace('_', '-');
+  document.documentElement.lang = locale || 'en';
+  byId('qtorch').setAttribute('aria-label', L('ph.torch'));
+  byId('qcam').setAttribute('aria-label', L('app.camera'));
+  byId('homebar').setAttribute('aria-label', L('ph.home'));
+  byId('arrangedone').setAttribute('aria-label', L('ph.arrange_done'));
+  byId('arrangedone').textContent = L('ph.arrange_done');
+  const sp = byId('spilltxt'); if (sp) sp.textContent = L('ph.search');
+}
+
+/// Repaint everything a table that has just arrived could have left worded wrongly.
+///
+/// Found by what paints a label outside the open app: the chrome above, the home screen and its
+/// app names, the lock screen line and its cards, the notification centre and the control
+/// centre when they are out, a showing peek or island card, and the payphone panel. Cards are
+/// worded when painted (see `nText`), so painting them again is enough. Two surfaces are left to
+/// their own next paint on purpose: the first-run assistant, whose inputs would be rebuilt under
+/// the player's typing, and the call screen, whose render also drives the ringtone.
+///
+/// Scheduled rather than called inline, so it runs after the handler that brought the table has
+/// finished - an `open` has replaced `state` by then - and once however many messages in one turn
+/// carried a table. That is also after this whole file has run, so the booth and peek state
+/// declared far below are initialised.
+let repaintQueued = false;
+function scheduleRepaintStrings() {
+  if (repaintQueued) return;
+  repaintQueued = true;
+  setTimeout(() => { repaintQueued = false; repaintStrings(); }, 0);
+}
+
+function repaintStrings() {
+  paintChrome();
+  if (openApp && RENDER[openApp.id]) RENDER[openApp.id]();
+  if (typeof paintLockMeta === 'function') paintLockMeta();
+  // Whatever is in front of it: the home screen keeps arrange mode across a repaint, and the grid
+  // fit stands down on a hidden, zero-sized grid.
+  if ((state.apps || []).length) renderHome();
+  paintNotifs();
+  if (byId('shade').classList.contains('on')) renderShade();
+  if (byId('cc').classList.contains('on')) renderCC();
+  if (boothState && !byId('booth').classList.contains('hidden')) {
+    byId('boothname').textContent = L('ph.booth_title');
+    boothRender();
   }
+  const device = byId('device');
+  const isl = byId('island');
+  if (peekShown && device.classList.contains('peeking')) {
+    paintPeekText(peekShown.kind, peekShown.data);
+  } else if (isl.classList.contains('notif') && isl.dataset.notif) {
+    const n = notifs.find((x) => String(x.id) === isl.dataset.notif);
+    if (n) {
+      byId('inTitle').textContent = nText(n.title);
+      byId('inBody').textContent = nText(n.body);
+    }
+  }
+}
+
+let strungAt = 0;
+let stringsAsking = false;    // one request at a time, so two failures cannot start two retry chains
+let stringsBooted = false;    // has an answer carried a table since this page loaded?
+let stringsRetry = null;
+let stringsRetryStep = 0;
+const STRINGS_BACKOFF = [1000, 2000, 4000];   // and every 10 s after that
+
+async function requestStrings(retry) {
+  // Once every two seconds at most: `L` calls this on a miss, and a view full of misses would
+  // otherwise ask once per label. A scheduled retry is exempt, because its delay is the throttle.
+  const now = Date.now();
+  if (stringsAsking || (retry !== true && now - strungAt < 2000)) return;
+  strungAt = now;
+  stringsAsking = true;
+  clearTimeout(stringsRetry);
+  stringsRetry = null;
+  // `boot` until an answer lands. This page may be a reload the client never noticed, and the
+  // client's record of what the page holds then describes a page that is gone.
+  const r = await post('strings', stringsBooted ? {} : { boot: true });
+  stringsAsking = false;
+  if (adoptStrings(r)) {
+    stringsBooted = true;
+    stringsRetryStep = 0;
+    return;
+  }
+  // Failed, or answered with nothing. Keep asking while there is nothing to draw with; a table
+  // that arrived on a message in the meantime ends it.
+  if (hasStrings()) return;
+  const wait = STRINGS_BACKOFF[stringsRetryStep] || 10000;
+  stringsRetryStep += 1;
+  stringsRetry = setTimeout(() => requestStrings(true), wait);
 }
 
 // As early as the page can ask. `post` needs nothing but the resource name, which is available
@@ -7195,7 +7358,6 @@ async function emergencySend(o) {
 function emergency911Alert(d) {
   const a = d.alert || {};
   const s = d.service || {};
-  const what = L(a.reason || '') || '';
 
   if (d.sound !== false) {
     // Straight to the file at the volume the config named rather than through `ui()`, which
@@ -7225,8 +7387,8 @@ function emergency911Alert(d) {
   archivePeek('notif', {
     app: 'emergency',
     icon: 'warning',
-    title: L('ph.911_new') + (s.label ? ' - ' + L(s.label) : ''),
-    body: [what, a.detail, a.street].filter(Boolean).join(' - '),
+    title: () => L('ph.911_new') + (s.label ? ' - ' + L(s.label) : ''),
+    body: () => [L(a.reason || '') || '', a.detail, a.street].filter(Boolean).join(' - '),
   });
 
   // And if they are looking at the queue, it appears in it - inserted rather than refetched,
@@ -7243,19 +7405,19 @@ function emergency911Alert(d) {
 function emergency911Status(d) {
   const s = d.service || {};
   const key = d.state === 'closed' ? 'ph.911_c_closed' : 'ph.911_c_taken';
-  const line = d.by ? L(key + '_by').replace('{n}', d.by) : L(key);
+  const line = () => (d.by ? L(key + '_by').replace('{n}', d.by) : L(key));
 
   if (d.sound !== false) ui(d.state === 'closed' ? 'received' : 'success');
 
   archivePeek('notif', {
     app: 'emergency',
     icon: 'shield',
-    title: s.label ? L(s.label) : L('app.emergency'),
+    title: () => (s.label ? L(s.label) : L('app.emergency')),
     body: line,
   });
   // A toast as well when they are holding the phone: the card is where it is FOUND, the toast
   // is what is seen. Only when they are looking, so it is never a second copy of the banner.
-  if (!byId('device').classList.contains('hidden')) toast(line);
+  if (!byId('device').classList.contains('hidden')) toast(line());
 
   if (openApp && openApp.id === 'emergency') RENDER.emergency();
 }
@@ -10959,8 +11121,8 @@ function renderShade() {
     const cards = byApp[appId].map((n) =>
       '<div class="ncard" data-nid="' + n.id + '">' +
         '<span class="nic">' + UI.appIcon(n.icon) + '</span>' +
-        '<span class="nbody"><span class="nt">' + esc(n.title) + '</span>' +
-        '<span class="nb">' + esc(n.body) + '</span></span>' +
+        '<span class="nbody"><span class="nt">' + esc(nText(n.title)) + '</span>' +
+        '<span class="nb">' + esc(nText(n.body)) + '</span></span>' +
         '<span class="nw">' + esc(relTime(n.at)) + '</span>' +
         '<button class="nx" data-x="' + n.id + '" type="button" aria-label="' +
           esc(L('ph.close')) + '">' + svg('xmark') + '</button></div>').join('');
@@ -17971,13 +18133,24 @@ function socWhen(at) {
 // those two apps has always read.
 function postCard(pst, appId) {
   const photoFirst = appId === 'snap';
+  // The header is a row of two siblings, not one button. The name opens the profile and the
+  // three dots open your own post's actions; nesting the second inside the first would be a
+  // button in a button, which is invalid markup whose inner press the browser may hand to the
+  // outer one. The dots are the one place a player looks for "delete this", which the footer's
+  // small trash glyph never was.
   const head =
-    '<button class="phead" data-who="' + esc(pst.handle) + '" type="button">' +
-      socAvatar(pst) +
-      '<span class="pnames">' +
-        (pst.displayname ? '<span class="pdn">' + esc(pst.displayname) + socVerified(pst) + '</span>' : '') +
-        '<span class="ph">@' + esc(pst.handle) + '</span></span>' +
-      '<span class="pt">' + esc(socWhen(pst.at)) + '</span></button>';
+    '<div class="pheadrow">' +
+      '<button class="phead" data-who="' + esc(pst.handle) + '" type="button">' +
+        socAvatar(pst) +
+        '<span class="pnames">' +
+          (pst.displayname ? '<span class="pdn">' + esc(pst.displayname) + socVerified(pst) + '</span>' : '') +
+          '<span class="ph">@' + esc(pst.handle) + '</span></span>' +
+        '<span class="pt">' + esc(socWhen(pst.at)) + '</span></button>' +
+      (pst.mine
+        ? '<button class="pact pmore" type="button" aria-label="' + esc(L('ph.soc_post_actions')) + '">' +
+            svg('more') + '</button>'
+        : '') +
+    '</div>';
 
   // A clip renders as a looping muted video; photographs as a grid. Both fill the card.
   //
@@ -18058,7 +18231,11 @@ function popHeart(card) {
 /// thumbnail puts it in the sheet, and every selector here used to query `#appbody` only - so
 /// none of the thirteen matched, and every control on that card was dead. Not one handler bound,
 /// silently.
-function wirePosts(appId, reload, root) {
+///
+/// `reopen` is for a card in a sheet: it raises that sheet again, and it is what Cancel on the
+/// post's actions or on its delete confirmation goes back to. Both of those replace the sheet the
+/// card was in, so without it a Cancel dropped the player on whatever was underneath.
+function wirePosts(appId, reload, root, reopen) {
   // **Scoped to where the card actually is.** `rows` at the top of this file always queries
   // `#appbody`; a post opened from a profile thumbnail lives in `#sheet`, so not one of the
   // selectors below matched and every control on that card was dead. `qrows` already exists
@@ -18177,14 +18354,68 @@ function wirePosts(appId, reload, root) {
     e.stopPropagation();
     leaveCard(() => socialProfile(appId, b.dataset.who));
   }));
-  rows('.post .pdel', (b) => b.addEventListener('click', () => {
-    const card = b.closest('.post');
+  // ── Deleting your own post ──
+  // Two ways in, one way through: the footer's trash and the header's three dots both end on
+  // the same confirmation.
+  //
+  // Going back to the card after a Cancel. `sheet()` clears `sheetReturn`, so this is set after
+  // each sheet raised here, never before. The reopen waits a microtask and runs only if no sheet
+  // was closed or raised in between, because `alertSheet` closes itself - which is what calls
+  // this - BEFORE it runs the confirm handler: reopening at once would put the post back on the
+  // screen for as long as the delete request takes. The confirm handler closes the sheet first
+  // thing, which moves the epoch on and so cancels the reopen.
+  const backToCard = () => {
+    if (!reopen) return;
+    sheetReturn = () => {
+      const at = sheetEpoch;
+      queueMicrotask(() => { if (sheetEpoch === at) reopen(); });
+    };
+  };
+  const askDelete = (card) => {
+    const id = Number(card.dataset.id);
     confirmSheet(L('ph.soc_delete_post'), L('ph.delete'), async () => {
-      const r = await post('social', { op: 'delete', id: Number(card.dataset.id) });
+      // With a `reopen` the confirmation is still on screen here (see `backToCard`). A plain
+      // close rather than a forced one: `sheetReturn` is already spent, and forcing would also
+      // throw away any prompt queued behind this sheet.
+      if (reopen) closeSheet();
+      const r = await post('social', { op: 'delete', id });
       if (r && r.ok) { card.remove(); toast(L('ph.soc_deleted')); if (reload) reload(); }
       else toast(L('ph.err_' + ((r && r.error) || 'x')));
     });
+    backToCard();
+  };
+  rows('.post .pdel', (b) => b.addEventListener('click', () => askDelete(b.closest('.post'))));
+  // The actions sheet, on the model of a message's long press: the destructive action as a
+  // button, with a line under it saying what it takes with it, before the confirmation.
+  rows('.post .pmore', (b) => b.addEventListener('click', () => {
+    const card = b.closest('.post');
+    const text = card.querySelector('.pbody');
+    const excerpt = text ? text.textContent.trim().slice(0, 90) : '';
+    sheet(L('ph.soc_post_actions'),
+      UI.button(L('ph.soc_delete_post_action'), 'socpostdel', 'destructive') +
+      '<div class="groupfoot">' + esc(L('ph.soc_delete_post_hint')) + '</div>',
+      () => byId('socpostdel').addEventListener('click', () => askDelete(card)),
+      'post-actions', excerpt ? { subtitle: excerpt } : undefined);
+    backToCard();
   }));
+}
+
+/// What a card in a sheet says now, written back into the post it was drawn from.
+///
+/// A like, a save or a comment changes the card, not the object behind it. A sheet raised again
+/// from that object - after a Cancel, or from the same grid tile - would quietly take the like
+/// back, so the live state is read off the card first.
+function socCardState(host, pst) {
+  const card = host && host.querySelector('.post');
+  if (!card || !pst) return pst;
+  const on = (sel) => { const el = card.querySelector(sel); return el ? el.classList.contains('on') : undefined; };
+  const count = (sel) => { const el = card.querySelector(sel + ' span'); return el ? Number(el.textContent) || 0 : undefined; };
+  const live = {
+    liked: on('.plike'), likes: count('.plike'), saved: on('.psave'),
+    reposted: on('.prepost'), reposts: count('.prepost'), comments: count('.pcomment'),
+  };
+  Object.keys(live).forEach((k) => { if (live[k] !== undefined) pst[k] = live[k]; });
+  return pst;
 }
 
 // A small yes/no, because deleting a post from a feed you are scrolling should take one
@@ -18698,11 +18929,14 @@ async function socialProfile(appId, handle) {
   if (grid) rows('.socthumb', (b) => b.addEventListener('click', () => {
     const one = posts.find((p) => String(p.id) === b.dataset.id);
     if (!one) return;
-    sheet(L('app.snap'), '<div class="socone">' + postCard(one, appId) + '</div>', () => {
+    const open = () => sheet(L('app.snap'), '<div class="socone">' + postCard(one, appId) + '</div>', () => {
+      const host = byId('sheet').querySelector('.socone');
       // In the SHEET, not the app body. Without saying so, none of wirePosts' selectors match
       // and every control on this card is dead - like, comment, repost, save, the grid cells.
-      wirePosts(appId, () => socialRender(appId), 'sheet');
+      // `open` again is where a Cancel on this post's actions goes back to.
+      wirePosts(appId, () => socialRender(appId), 'sheet', () => { socCardState(host, one); open(); });
     });
+    open();
   }));
   else wirePosts(appId, () => socialProfile(appId, handle));
 }
@@ -18895,9 +19129,15 @@ function socialRender(appId) {
 // of pictures quickly and open the one you want.
 function socGrid(appId, list, emptyKey, reload) {
   if (!list.length) { body(UI.empty(L(emptyKey), APP_ICON[appId])); return; }
-  body('<div class="shots socgrid">' + list.map((pst, i) =>
-    '<div class="shot" data-gi="' + i + '" style="' +
-      inlineBackground(pst.image) + '"></div>').join('') + '</div>');
+  body('<div class="shots socgrid">' + list.map((pst, i) => {
+    const pic = pst.image || postImages(pst)[0] || '';
+    // A post with no picture is drawn as its opening words. Bleeter's Saved tab comes through
+    // here too, and a background of nothing drew every saved bleet as an empty square.
+    return pic
+      ? '<div class="shot" data-gi="' + i + '" style="' + inlineBackground(pic) + '"></div>'
+      : '<div class="shot socgridtext" data-gi="' + i + '"><span>' +
+          esc(String(pst.body || '').slice(0, 160)) + '</span></div>';
+  }).join('') + '</div>');
   // A tile opens the post on its own, where the caption, the likes and the comments are.
   rows('.shot[data-gi]', (el) => el.addEventListener('click', () =>
     socPostSheet(appId, list[Number(el.dataset.gi)], reload)));
@@ -18918,26 +19158,18 @@ function postImages(pst) {
 function socPostSheet(appId, pst, reload) {
   if (!pst) return;
   sheet('@' + (pst.handle || ''), '<div id="socone">' + postCard(pst, appId) + '</div>', () => {
-    // The card's own handlers, so a like or a save from here behaves as it does in the feed.
-    qrows('sheet', '.post .plike', (b) => b.addEventListener('click', async () => {
-      const r = await post('social', { op: 'like', id: pst.id, app: appId });
-      if (!r || !r.ok) return;
-      b.classList.toggle('on', r.liked);
-      b.querySelector('span').textContent = r.likes;
-      ui(r.liked ? 'toggleon' : 'toggleoff');
-    }));
-    qrows('sheet', '.post .psave', (b) => b.addEventListener('click', async () => {
-      const r = await post('social', { op: 'save', id: pst.id, app: appId });
-      if (!r || !r.ok) return;
-      b.classList.toggle('on', r.saved);
-      toast(L(r.saved ? 'ph.soc_saved_added' : 'ph.soc_saved_removed'));
-    }));
-    qrows('sheet', '.post .pcomment', (b) => b.addEventListener('click', () =>
-      commentSheet(appId, pst.id, b.querySelector('span'))));
-    qrows('sheet', '.post .phead', (b) => b.addEventListener('click', () => {
-      closeSheet(true);
-      socialProfile(appId, b.dataset.who);
-    }));
+    const one = byId('socone');
+    // The same wiring as every other card. This sheet used to bind like, save, comment and the
+    // header by hand, and so missed everything else - the trash above all, which drew, took
+    // the press and did nothing, on the only path to a single post from Saved or Explore.
+    //
+    // `reload` runs after a delete. The confirmation has closed the sheet by then; the close
+    // here is for the case where this post is somehow still showing, and it checks, so it
+    // cannot shut a sheet that has replaced this one.
+    wirePosts(appId, () => {
+      if (one.isConnected && byId('sheet').classList.contains('on')) closeSheet(true);
+      if (reload) reload();
+    }, 'sheet', () => socPostSheet(appId, socCardState(one, pst), reload));
   });
 }
 
@@ -22376,6 +22608,19 @@ function buzzDevice() {
   buzzTimer = setTimeout(() => d.classList.remove('buzz'), 700);
 }
 
+/// What the risen handset is showing, kept while it is up so a string table that lands late can
+/// repaint its words instead of leaving them humanised keys.
+let peekShown = null;
+
+function paintPeekText(kind, data) {
+  const title = kind === 'message'
+    ? (nameOfNumber(data.from) || L('ph.new_message_t'))
+    : (data.title || L('ph.notification'));
+  const bodyTxt = kind === 'message' ? (data.body || L('ph.attach')) : (data.body || '');
+  byId('inTitle').textContent = title;
+  byId('inBody').textContent = bodyTxt;
+}
+
 function showPeek(kind, data) {
   const d = byId('device');
   if (call || (state.prefs || {}).dnd) return;
@@ -22383,16 +22628,12 @@ function showPeek(kind, data) {
   // repeated here so the rule holds whoever sends the message.
   if (data && data.hasItem === false) return;
   if (!d.classList.contains('hidden') && !d.classList.contains('peeking')) return; // it is open
-  const title = kind === 'message'
-    ? (nameOfNumber(data.from) || L('ph.new_message_t'))
-    : (data.title || L('ph.notification'));
-  const bodyTxt = kind === 'message' ? (data.body || L('ph.attach')) : (data.body || '');
 
   d.classList.remove('hidden');
   d.classList.add('peeking');
   byId('inicon').innerHTML = UI.appIcon(kind === 'message' ? 'messages' : (data.app || data.icon || 'dot'));
-  byId('inTitle').textContent = title;
-  byId('inBody').textContent = bodyTxt;
+  peekShown = { kind, data };
+  paintPeekText(kind, data);
   setIslandMode('notif');
   buzzDevice();
 
@@ -22402,6 +22643,7 @@ function showPeek(kind, data) {
     d.classList.remove('peeking');
     d.classList.add('hidden');
     peekTimer = null;
+    peekShown = null;
   }, 4600);
 }
 
@@ -22409,10 +22651,11 @@ function archivePeek(kind, data) {
   data = data || {};
   const app = kind === 'message' ? 'messages' : notifApp(data);
   if (appMuted(app)) return;
-  const title = kind === 'message'
+  // Functions, so the card is worded when it is painted: see `nText`.
+  const title = () => (kind === 'message'
     ? (data.groupName || nameOfNumber(data.from) || L('ph.new_message_t'))
-    : (data.title || L('ph.notification'));
-  const bodyText = kind === 'message' ? (data.body || L('ph.attach')) : (data.body || '');
+    : (nText(data.title) || L('ph.notification')));
+  const bodyText = () => (kind === 'message' ? (nText(data.body) || L('ph.attach')) : nText(data.body));
   const onClick = () => {
     const target = (state.apps || []).find((entry) => entry.id === app);
     if (!target) return;
@@ -22895,8 +23138,8 @@ function islandNotify(n) {
   if (call) return;
   const isl = byId('island');
   byId('inicon').innerHTML = UI.appIcon(n.icon);
-  byId('inTitle').textContent = n.title;
-  byId('inBody').textContent = n.body;
+  byId('inTitle').textContent = nText(n.title);
+  byId('inBody').textContent = nText(n.body);
   setIslandMode('notif');
   isl.dataset.notif = n.id;
   clearTimeout(islandTimer);
@@ -22953,8 +23196,8 @@ function paintNotifs() {
     shown.map((n, i) =>
       `<div class="lnotif glass" style="animation-delay:${i * 50}ms" data-nid="${n.id}">` +
       `<span class="lic">${UI.appIcon(n.icon)}</span>` +
-      `<span class="lbody"><span class="lt">${esc(n.title || '')}</span>` +
-      `<span class="lb">${esc(n.body || '')}</span></span>` +
+      `<span class="lbody"><span class="lt">${esc(nText(n.title))}</span>` +
+      `<span class="lb">${esc(nText(n.body))}</span></span>` +
       `<button class="lx" data-x="${n.id}" type="button" aria-label="${esc(L('ph.close'))}">${svg('xmark')}</button></div>`).join('');
 
   // Clear one, or clear the stack. A notification you have read is one you should be able
@@ -24080,7 +24323,10 @@ window.addEventListener('message', (e) => {
     // host may have come back, the player may have fixed their connection, and taking the phone
     // out again is the moment they expect to find out.
     shotAliveReset();
-    S = d.strings || {};
+    // The table rides on `open` only when the client does not believe this page holds the
+    // player's language, so an `open` without one keeps the table already here. Replacing it
+    // with nothing, as this line used to, would blank every label an earlier message had filled.
+    if (!adoptStrings(d) && !hasStrings()) requestStrings();
     // A different character is holding this phone - a switch, or staff looking at somebody
     // else's. Their notifications go, and so do the badges an app set for the last one:
     // a count belonging to one character on another character's home screen is a new bug
@@ -24095,13 +24341,8 @@ window.addEventListener('message', (e) => {
     state.sounds = d.sounds || state.sounds || {};
     call = d.call || null;
     dialed = ''; thread = null; threadGroup = null; openApp = null; page = 0;
-    const locale = String(d.locale || d.lang || 'en').trim().replace('_', '-');
-    document.documentElement.lang = locale || 'en';
     byId('device').classList.remove('hidden');
-    byId('qtorch').setAttribute('aria-label', L('ph.torch'));
-    byId('qcam').setAttribute('aria-label', L('app.camera'));
-    byId('homebar').setAttribute('aria-label', L('ph.home'));
-    byId('arrangedone').setAttribute('aria-label', L('ph.arrange_done'));
+    paintChrome();
     // The number, and the temporary server id beside it when the player wants it there. Staff
     // ask for that id constantly and it is the one thing a player cannot look up on their own
     // phone, so the lock screen is the right place for it: visible without unlocking.
@@ -24116,7 +24357,6 @@ window.addEventListener('message', (e) => {
     primeNowPlaying();
     tick();
     paintNotifs();
-    const sp = byId('spilltxt'); if (sp) sp.textContent = L('ph.search');
     hideAuth();
     byId('lock').classList.remove('out');
     byId('lockquick').classList.remove('hidden');
@@ -24180,7 +24420,8 @@ window.addEventListener('message', (e) => {
       // this the banner ran the raw `svc:Dispatch` through the number formatter and announced
       // the message as coming from something that is not a phone number.
       banner({ app: 'messages', icon: 'messages',
-        title: groupId ? groupName : (m.service || nameOfNumber(m.from)), body: m.body || L('ph.attach'),
+        title: () => (groupId ? (m.groupName || L('ph.groups')) : (m.service || nameOfNumber(m.from))),
+        body: () => m.body || L('ph.attach'),
         onClick: () => {
           const a = (state.apps || []).find((x) => x.id === 'messages');
           if (!a) return;
@@ -24286,32 +24527,28 @@ window.addEventListener('message', (e) => {
     // the point of an emergency alert is that it reaches somebody who was not looking at their
     // phone. That is also exactly why it is behind an ace and a config switch - a channel that
     // ignores a player's own silence settings is one that has to be hard to reach.
+    adoptStrings(d);
     emergencyAlert(d.alert || {});
   } else if (d.action === 'emergencyAlert') {
     // A 911 alert for a service this player answers for. A different thing entirely from the
     // staff broadcast above, despite the neighbouring name: that one goes to a whole city.
-    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    adoptStrings(d);
     emergency911Alert(d);
   } else if (d.action === 'emergencyStatus') {
-    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    adoptStrings(d);
     emergency911Status(d.update || {});
   } else if (d.action === 'emergencyUpdate') {
     // Somebody took an alert or closed one. Nothing to show; the queue just stops being wrong.
     if (openApp && openApp.id === 'emergency') RENDER.emergency();
   } else if (d.action === 'strings') {
-    // Pushed by the client when the language lands after this page loaded.
-    if (d.strings && Object.keys(d.strings).length) {
-      S = d.strings;
-      warnedNoStrings = false;
-      if (d.locale) state.locale = d.locale;
-      if (openApp && RENDER[openApp.id]) RENDER[openApp.id]();
-      else paintLockMeta();
-    }
+    // Pushed by the client when the language lands after this page loaded, or changes. The
+    // repaint is scheduled by the adoption itself.
+    adoptStrings(d);
   } else if (d.action === 'peek') {
-    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    adoptStrings(d);
     showPeek(d.kind, d.data || {});
   } else if (d.action === 'archive') {
-    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    adoptStrings(d);
     archivePeek(d.kind, d.data || {});
   } else if (d.action === 'voicemailOffer') {
     enqueuePrompt(() => voicemailOffer(d.number || ''), d.ttlMs);
@@ -24374,14 +24611,14 @@ window.addEventListener('message', (e) => {
     }
   } else if (d.action === 'taxi') {
     // The config provider's own ride events, which carry what happened.
-    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    adoptStrings(d);
     const u = d.update || {};
     const kind = String(u.kind || '');
     if (kind !== 'taken' && kind !== 'cancelled') {
       archivePeek('notif', {
         app: 'taxi', icon: 'taxi',
-        title: L('app.taxi'),
-        body: L('ph.taxi_ev_' + kind),
+        title: () => L('app.taxi'),
+        body: () => L('ph.taxi_ev_' + kind),
       });
       ui(kind === 'done' || kind === 'paid' ? 'success' : 'received');
     }
@@ -24565,12 +24802,12 @@ window.addEventListener('message', (e) => {
   } else if (d.action === 'zuberStatus') {
     // An order moved along in the kitchen. The card and the sound are the client's; this keeps
     // the app honest if it happens to be open on the tracker.
-    if (d.strings && !Object.keys(S || {}).length) S = d.strings;
+    adoptStrings(d);
     const u = d.update || {};
     archivePeek('notif', {
       app: 'zuber', icon: 'zuber',
-      title: u.restaurant || L('app.zuber'),
-      body: L('ph.zuber_st_' + String(u.status || 'pending')),
+      title: () => u.restaurant || L('app.zuber'),
+      body: () => L('ph.zuber_st_' + String(u.status || 'pending')),
     });
     if (u.sound !== false) ui(String(u.status) === 'completed' ? 'success' : 'received');
     if (openApp && openApp.id === 'zuber') RENDER.zuber();
@@ -25483,8 +25720,8 @@ window.addEventListener('message', (e) => {
   const d = e.data || {};
   if (d.action === 'booth:open') {
     // A payphone can be the FIRST thing this page ever draws - it is reachable without
-    // opening the phone at all - so the strings arrive with it rather than being assumed.
-    if (d.strings && Object.keys(d.strings).length) S = d.strings;
+    // opening the phone at all - so the client attaches the strings when this page lacks them.
+    adoptStrings(d);
     boothOpen(d.data, d.call);
   }
   else if (d.action === 'booth:close') boothClose();

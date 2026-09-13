@@ -99,8 +99,8 @@ Twenty-two are installed to begin with: Phone, Messages, Contacts, **911**, **Al
 - **Messages**: private and group threads, photos, GIFs, location sharing, reactions, forwarding and emoji.
 - **Bank**: the balance your framework already keeps, a statement, transfers to another character by phone number, saved beneficiaries, and a notification when money arrives - a salary, a society payout, a transfer. No companion resource - it reads qb-core, qbx, ESX, ox or your banking script through the bridge. Limits, an optional fee and offline transfers are configurable.
 - **Camera**: no interface of its own, on purpose. Opening it goes straight into the game's own phone camera, which draws the framing and names the keys in its own help box - **Enter photographs, arrow up flips to the selfie, Backspace leaves** - and the app closes itself the moment the engine hands the camera back. A NUI page is an overlay and can never show the game inside itself, so anything the app painted would sit over the shot and land in the photograph with it. There is no video recording and no mode strip: photo is the whole app.
-- **Bleeter** (Twitter): two timelines, likes, comments, reposts, a searchable directory, follows, direct messages and profiles. **Up to four photographs on one post**, reordered in the composer; `Config.Social.maxImages` is the ceiling and the server truncates a longer list rather than refusing it, so setting it to 1 turns the feature off without breaking anything.
-- **Snapmatic** (Instagram): stories with a 24 hour life, a photo feed, a profile grid, search and direct messages. Four photographs to a post here too, from the same setting.
+- **Bleeter** (Twitter): two timelines, likes, comments, reposts, a searchable directory, follows, direct messages and profiles. **Up to four photographs on one post**, reordered in the composer; `Config.Social.maxImages` is the ceiling and the server truncates a longer list rather than refusing it, so setting it to 1 turns the feature off without breaking anything. **Your own post can be deleted** from the **...** button beside your name: **Post options** says what goes with it (its likes, comments and reposts) and asks you to confirm. It works from the feed, a profile, a hashtag feed and Saved, and the trash in the card's footer leads to the same confirmation.
+- **Snapmatic** (Instagram): stories with a 24 hour life, a photo feed, a profile grid, search and direct messages. Four photographs to a post here too, from the same setting. Deleting your own post works the same way, from Explore as well.
 - **Hush** (Tinder): a card you throw with your finger, matches kept in their own tab, an editable profile.
 - **What's new on Bleeter and Snapmatic**: at most one banner an hour, per app, telling that player how many posts have appeared since they last opened it. Never sent on a feed they have already read, and the same posts are never announced twice, so ignoring one does not mean receiving it again every hour. Somebody who has never opened the app is marked where the feed stands and told nothing, rather than handed the whole history as a number. The hour is a ceiling rather than a schedule and every player carries their own clock, so a restart does not make every handset on the server buzz at once. Do not disturb, an app silenced in Settings, an app they uninstalled, a flat battery and a phone they are not carrying all stop it. On by default; `Config.Social.nudge` has an on/off switch and an interval for each of the two apps, and `set phone_socialNudge false` turns the whole thing off without a restart.
 - **Cipher**: an encrypted messenger. The server routes sealed envelopes and keeps neither the clear text nor a private key.
@@ -252,7 +252,9 @@ file itself explains each setting where the setting is.
 an image from), `DefaultGlass`, `Clock`, `Theme` (the accent and the system palette).
 
 **Talking**
-`Messages`, `Cipher`, `Calls` (including `badSignal`, which is what makes one bar sound like one
+`Messages`, `Mail` (addresses, reserved and bought domains, and `deleteAccounts`: whether a
+player may delete an address, which is then retired so nobody else can take it and receive its
+replies), `Cipher`, `Calls` (including `badSignal`, which is what makes one bar sound like one
 bar), `RingOut`, `Booth` (payphones), `FruitDrop` (sharing between two phones in the room),
 `Blocking` (what a blocked number can and cannot do), `FaceTime` (video calls, off by default),
 `RequiredContacts` (numbers in every phone - 911 is one, and calling it opens the app).
@@ -1093,7 +1095,7 @@ social feed.
 | `messages` | Text messages, groups, members, reactions. |
 | `calls` | Call history and voicemail. |
 | `contacts` | Every contact list. |
-| `mail` | Mail messages, mailboxes and addresses. |
+| `mail` | Mail messages, mailboxes and addresses, including the ones players deleted. A deleted address is retired rather than freed, so nobody else can take it; this, or the `WipePhone` export for one character, is what frees it again. |
 | `notes`, `reminders`, `pins` | Notes, Reminders, map pins. |
 | `alerts` | Civil alerts. |
 | `bank` | Bank statements, pending transfers, the Bank Pro log. |
@@ -1261,8 +1263,8 @@ Vingt-deux sont installées au départ : Téléphone, Messages, Contacts, **911*
 - **Messages** : conversations privées et groupées, photos, GIF, partage de position, réactions, transfert et emoji.
 - **Banque** : le solde que votre framework tient déjà, un relevé, des virements vers un autre personnage par numéro de téléphone, des bénéficiaires enregistrés, et une notification quand de l'argent arrive — salaire, versement de société, virement. Aucune ressource compagnon : elle lit qb-core, qbx, ESX, ox ou votre script bancaire via le bridge. Limites, frais optionnels et virements hors ligne configurables.
 - **Appareil photo** : aucune interface à elle, volontairement. L'ouvrir passe directement dans la caméra de téléphone du jeu, qui dessine le cadrage et nomme les touches dans sa propre boîte d'aide - **Entrée photographie, flèche haut retourne en selfie, retour arrière quitte** - et l'application se ferme dès que le moteur rend la caméra. Une page NUI est une surcouche et ne peut jamais afficher le jeu à l'intérieur d'elle-même : tout ce que l'application peindrait se poserait sur la prise en cours et finirait dans la photo avec elle. Il n'y a plus d'enregistrement vidéo ni de bande de modes : le mode photo est toute l'application.
-- **Bleeter** (Twitter) : deux fils, likes, commentaires, republications, annuaire cherchable, abonnements, messages privés et profils. **Jusqu'à quatre photos sur une publication**, réordonnables dans le compositeur ; `Config.Social.maxImages` est le plafond et le serveur tronque une liste plus longue au lieu de la refuser, donc le régler sur 1 désactive la fonctionnalité sans rien casser d'autre.
-- **Snapmatic** (Instagram) : stories d'une journée, fil photo, profil en grille, recherche et messages privés. Quatre photos par publication ici aussi, depuis le même réglage.
+- **Bleeter** (Twitter) : deux fils, likes, commentaires, republications, annuaire cherchable, abonnements, messages privés et profils. **Jusqu'à quatre photos sur une publication**, réordonnables dans le compositeur ; `Config.Social.maxImages` est le plafond et le serveur tronque une liste plus longue au lieu de la refuser, donc le régler sur 1 désactive la fonctionnalité sans rien casser d'autre. **Vos propres publications se suppriment** depuis le bouton **...** à côté de votre nom : **Options de la publication** indique ce qui part avec elle (ses J'aime, ses commentaires et ses republications) et demande confirmation. Cela fonctionne depuis le fil, un profil, un fil de hashtag et les Enregistrés, et la corbeille du pied de carte mène à la même confirmation.
+- **Snapmatic** (Instagram) : stories d'une journée, fil photo, profil en grille, recherche et messages privés. Quatre photos par publication ici aussi, depuis le même réglage. Supprimer sa propre publication fonctionne de la même façon, depuis Explorer aussi.
 - **Hush** (Tinder) : une carte qu'on lance au doigt, les matchs conservés dans leur onglet, un profil modifiable.
 - **Du nouveau sur Bleeter et Snapmatic** : au plus une bannière par heure et par application, qui dit à ce joueur combien de publications sont parues depuis sa dernière visite. Jamais envoyée sur un fil qu'il a déjà lu, et les mêmes publications ne sont jamais annoncées deux fois : en ignorer une ne signifie pas la recevoir de nouveau toutes les heures. Celui qui n'a jamais ouvert l'application est repéré là où en est le fil et ne reçoit rien, plutôt que tout l'historique sous forme de nombre. L'heure est un plafond et non un horaire, et chaque joueur porte sa propre horloge : un redémarrage ne fait pas vibrer tous les téléphones du serveur en même temps. Ne pas déranger, une application coupée dans les Réglages, une application désinstallée, une batterie à plat et un téléphone qu'on n'a pas sur soi l'arrêtent tous. Activé par défaut ; `Config.Social.nudge` porte un interrupteur et un intervalle pour chacune des deux applications, et `set phone_socialNudge false` désactive l'ensemble sans redémarrer.
 - **Cipher** : messagerie chiffrée. Le serveur route des enveloppes scellées et ne conserve ni le texte clair ni la clé privée.
@@ -1414,7 +1416,9 @@ en `auto`), `Settings`, `PhoneItem`, `PowerbankItem`, `DeviceSize`, `DeviceSide`
 joueur peut coller une image), `DefaultGlass`, `Clock`, `Theme` (l'accent et la palette système).
 
 **Communication**
-`Messages`, `Cipher`, `Calls` (dont `badSignal`, ce qui fait qu'une barre s'entend comme une barre),
+`Messages`, `Mail` (adresses, domaines réservés et achetés, et `deleteAccounts` : si un joueur
+peut supprimer une adresse, qui est alors retirée pour que personne d'autre ne puisse la prendre
+et recevoir ses réponses), `Cipher`, `Calls` (dont `badSignal`, ce qui fait qu'une barre s'entend comme une barre),
 `RingOut`, `Booth` (cabines), `FruitDrop` (partage entre deux téléphones proches),
 `Blocking` (ce qu'un numéro bloqué peut et ne peut pas faire), `FaceTime` (appels vidéo, désactivés
 par défaut), `RequiredContacts` (numéros présents dans tous les téléphones — le 911 en est un, et
@@ -2283,7 +2287,7 @@ console ne doit pas coûter six mois de fil social à un serveur.
 | `messages` | SMS, groupes, membres, réactions. |
 | `calls` | Historique d'appels et répondeur. |
 | `contacts` | Tous les répertoires. |
-| `mail` | Messages, boîtes et adresses Mail. |
+| `mail` | Messages, boîtes et adresses Mail, y compris celles que les joueurs ont supprimées. Une adresse supprimée est retirée plutôt que libérée, pour que personne d'autre ne puisse la prendre ; c'est cette commande, ou l'export `WipePhone` pour un seul personnage, qui la libère de nouveau. |
 | `notes`, `reminders`, `pins` | Notes, Rappels, points de carte. |
 | `alerts` | Alertes civiles. |
 | `bank` | Relevés bancaires, virements en attente, journal Bank Pro. |

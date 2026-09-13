@@ -10502,6 +10502,38 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
   text-align: left;
 }
 
+/* The header row: the name button and, on your own post, the three dots beside it. Siblings in
+   a row because a button inside a button is invalid markup. The row carries the bottom margin
+   the name button used to, so a card with no dots lays out exactly as before. */
+.post .pheadrow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 7px;
+}
+
+.post .pheadrow .phead {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  margin-bottom: 0;
+}
+
+/* Your own post's actions. 34 square, the avatar's own height, so the header does not grow and
+   a cursor finds it without aiming. The dots are drawn heavier than the set's 1.9 stroke, which
+   at this size leaves three specks. */
+.post .pmore {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.post .pmore svg { width: 22px; height: 22px; stroke-width: 3.2; }
+.post .pmore:hover,
+.post .pmore:active { background: var(--app-fill); }
+
 /* The verified badge. Bigger than it was, and lit: at 14px flat it read as a bullet point
    next to the name rather than as a mark, which is the opposite of what a badge is for. */
 .pverif {
@@ -12891,6 +12923,27 @@ body.inframe.dark .uichip.negative { color: var(--fruitos-red); }
 /* Explore and Saved are grids of photographs. Same tiles as the gallery, so a player who has
    used one already knows the other. */
 .socgrid { margin-top: 2px; }
+
+/* A post with no photograph, in a grid of them: its opening words on the card colour. Bleeter's
+   Saved tab is this grid too, and every saved bleet was an empty square in it. */
+.socgrid .shot.socgridtext {
+  display: flex;
+  padding: 8px 9px;
+  overflow: hidden;
+  background-color: var(--app-card);
+}
+
+.socgridtext span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  color: var(--app-label);
+  font-size: var(--fs-caption1);
+  line-height: 1.3;
+  text-align: left;
+  word-break: break-word;
+}
 
 /* "Seen by", along the bottom of your own story. */
 .storyseen { position: absolute; left: 14px; bottom: 16px; z-index: 2;
