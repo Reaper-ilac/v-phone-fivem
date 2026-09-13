@@ -6925,6 +6925,31 @@ AddEventHandler('v-core:server:onPlayerLoaded', function(src, player)
     if Core then hydratePlayer(src, player) end
 end)
 
+--- **A phone works from the moment the character loads, not from its first open.**
+---
+--- Nothing fires `v-core:server:onPlayerLoaded` on qb-core, qbx_core, ESX or ox_core, so
+--- hydration only ever happened when the phone was opened: until then the number was not routed
+--- (calls and messages could not reach the player), the language was not pushed and the saved
+--- battery was not loaded. The bridge now announces every framework's load here.
+local function hydrateReal(src)
+    if not Core then return end
+    local p = (Core.GetPlayerReal or Core.GetPlayer)(src)
+    if not p then return end
+    if Bridge.SetHere then Bridge.SetHere(src, true) end
+    hydratePlayer(src, p)
+end
+AddEventHandler('v-phone:internal:playerLoaded', function(src) hydrateReal(tonumber(src)) end)
+
+-- And everybody already connected when the resource (re)starts, who will fire no load event.
+CreateThread(function()
+    while not Core do Wait(500) end
+    Wait(10000)
+    for _, raw in ipairs(GetPlayers()) do
+        local src = tonumber(raw)
+        if src and not Battery[src] then hydrateReal(src) end
+    end
+end)
+
 AddEventHandler('playerDropped', function()
     local src = source
     -- The real character, for the same reason as the drain tick: this row is the source's own
@@ -6935,6 +6960,7 @@ AddEventHandler('playerDropped', function()
         Bridge.KvSetSync(p.citizenid, 'battery', math.floor(Battery[src]))
     end
     BatterySaved[src] = nil
+    if Bridge.SetHere then Bridge.SetHere(src, nil) end
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil
     -- Cleared, so the next player to be handed this source id is measured rather than
     -- inheriting whether the last one was standing on a charger.

@@ -251,7 +251,34 @@ Core.PeekPlayer = function(src) return playerFor(src, false) end
 --- used to spend it: two seconds after an unnoticed expiry the tick consumed the refusal, and the
 --- message the staff member typed next was sent as their own character under a banner still
 --- naming the target.
-Core.HasPlayerReal = Core.HasPlayer
+--- **The framework half is remembered for thirty seconds.** The state tick asks every two seconds
+--- for every player, and on qb-core the answer crosses into another resource and serialises the
+--- whole player object each time. Whether a character is loaded changes only on a load, a logout
+--- or a drop: a load and a drop set it at once through `Bridge.SetHere`, and a logout is seen
+--- within the thirty seconds. The admin view half below is NOT cached, so a session still ends at
+--- the exact second the clock finds it over.
+local frameworkHas = Core.HasPlayer
+local hereOk, hereAt, HERE_TTL = {}, {}, 30
+
+Core.HasPlayerReal = function(src)
+    local key = tonumber(src)
+    -- No usable source: nothing to remember, and a nil table key would raise.
+    if not key then return frameworkHas(src) and true or false end
+    src = key
+    local now = os.time()
+    local at = hereAt[src]
+    if at and now - at < HERE_TTL then return hereOk[src] end
+    local ok = frameworkHas(src) and true or false
+    hereOk[src], hereAt[src] = ok, now
+    return ok
+end
+
+--- `ok` true on a character load, nil on a drop.
+function Bridge.SetHere(src, ok)
+    src = tonumber(src)
+    if not src then return end
+    hereOk[src], hereAt[src] = ok, (ok ~= nil) and os.time() or nil
+end
 
 Core.HasPlayer = function(src)
     local cid = heldBy(src, true, false)

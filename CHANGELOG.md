@@ -4,6 +4,48 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.1] - 2026-09-13
+
+### Fixed
+
+- **The phone works from the moment the character loads, not from its first open.** On qb-core,
+  qbx_core, ESX and ox_core the phone only prepared a player when they opened it: until then their
+  number was not routed, so calls and messages could not reach them, their language was not set
+  and their saved battery was not loaded. Players were being told to open the phone once after
+  connecting. The bridge now tells the phone as soon as the framework loads a character, and a
+  resource restart prepares everybody already connected.
+
+### Performance
+
+- **The network and charging tick no longer asks the framework about every player every two
+  seconds.** Checking that a character is loaded crossed into qb-core and serialised the whole
+  player object, for every player, on every pass: it was the phone's largest share of server
+  time in a live profile. The answer is now remembered for thirty seconds and updated at once when
+  a character loads or a player leaves. The staff admin view check is not cached, so a session
+  still ends at the exact second it runs out.
+
+---
+
+### Correctifs (miroir francais)
+
+- **Le telephone fonctionne des le chargement du personnage, plus seulement a sa premiere
+  ouverture.** Sur qb-core, qbx_core, ESX et ox_core, le telephone ne preparait un joueur qu'a
+  l'ouverture : jusque-la son numero n'etait pas route, donc appels et messages ne le trouvaient
+  pas, sa langue n'etait pas definie et sa batterie enregistree n'etait pas chargee. Le pont
+  previent maintenant le telephone des que le framework charge un personnage, et un redemarrage
+  de la ressource prepare tous les joueurs deja connectes.
+
+### Performances (miroir francais)
+
+- **La boucle reseau et recharge ne demande plus au framework, toutes les deux secondes, si chaque
+  joueur est la.** Cette verification passait par qb-core et serialisait l'objet joueur complet,
+  pour chaque joueur, a chaque passe : c'etait la plus grosse part du temps serveur du telephone
+  dans un profil reel. La reponse est gardee trente secondes et mise a jour aussitot au chargement
+  d'un personnage ou au depart d'un joueur. La verification de la vue admin n'est pas mise en
+  cache : une session se termine toujours a la seconde exacte.
+
+---
+
 ## [1.7.0] - 2026-09-13
 
 ### Added
