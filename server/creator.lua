@@ -248,7 +248,7 @@ local function postsFor(readerCid, creatorCid, limit)
     local out = {}
     for _, r in ipairs(rows) do
         local price = math.floor(num(r.price, 0))
-        local subsOnly = num(r.subs_only, 0) == 1
+        local subsOnly = (r.subs_only == true or num(r.subs_only, 0) == 1)
         -- Free to everybody, or already bought, or covered by a subscription, or your own.
         local open = postOpen(mine, price, subsOnly, num(r.bought, 0) == 1, isSub)
 
@@ -312,7 +312,7 @@ V.Callback('v-phone:fan:open', function(src, resolve)
         WHERE 1 = 1]] .. livePosts('po') .. [[
         ORDER BY po.id DESC LIMIT 40]], { cid, cid }) or {}) do
         local price = math.floor(num(r.price, 0))
-        local subsOnly = num(r.subs_only, 0) == 1
+        local subsOnly = (r.subs_only == true or num(r.subs_only, 0) == 1)
         local open = postOpen(false, price, subsOnly, num(r.bought, 0) == 1,
                               subscribed(cid, r.citizenid))
         feed[#feed + 1] = {
@@ -622,7 +622,7 @@ V.Callback('v-phone:fan:unlock', function(src, resolve, data)
         resolve({ error = 'postgone' }) return
     end
     if post.citizenid == cid then resolve({ error = 'self' }) return end
-    if num(post.subs_only, 0) == 1 then resolve({ error = 'subsonly' }) return end
+    if (post.subs_only == true or num(post.subs_only, 0) == 1) then resolve({ error = 'subsonly' }) return end
 
     local price = math.floor(num(post.price, 0))
     if price <= 0 then resolve({ error = 'free' }) return end
