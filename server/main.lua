@@ -2678,6 +2678,23 @@ exports('HasSignal',  function(src) return hasBars(src) end)
 --- `worldLive` is whether v-world counts as started, read once by a caller that asks for many
 --- players in a row. Through compat.lua's override that read is two natives, and it answers the
 --- same for every player in a pass. Left nil, it is read here.
+--- The position of a configured row, built once and kept.
+---
+--- The state tick measures every player against every dead zone and every charger, twice a
+--- minute each. Building a `vector3` per row per player per pass is a few hundred short-lived
+--- objects a second on a busy server, and the collector pays for all of them. The rows
+--- themselves do not move: they come from `config.lua` (or from v-world), and a server that
+--- edits one restarts. Weak keys, so a provider that hands back fresh tables does not leak.
+local rowVec = setmetatable({}, { __mode = 'k' })
+local function vecOf(row)
+    local v = rowVec[row]
+    if not v then
+        v = vector3((row.x or 0) + 0.0, (row.y or 0) + 0.0, (row.z or 0) + 0.0)
+        rowVec[row] = v
+    end
+    return v
+end
+
 local function signalAt(coords, worldLive)
     -- A staff outage is a ceiling like any dead zone, and it applies whether or not the
     -- map has any zones of its own - which is why it is read BEFORE the early return.
@@ -2688,7 +2705,7 @@ local function signalAt(coords, worldLive)
     if not worldLive then return bars end
     for _, z in ipairs(V.Use('v-world').GetDeadZones() or {}) do
         if z.enabled ~= false and z.enabled ~= 0 then
-            local d = #(coords - vector3(z.x + 0.0, z.y + 0.0, z.z + 0.0))
+            local d = #(coords - vecOf(z))
             if d <= (z.radius or 60.0) then
                 bars = math.min(bars, math.floor(tonumber(z.bars) or 0))
             end
@@ -2785,7 +2802,7 @@ local function chargeRateAt(src, ped, coords)
     -- Public chargers, from Config.Chargers.
     for _, c in ipairs(Config.Chargers or {}) do
         if c.enabled ~= false and c.enabled ~= 0 then
-            if #(coords - vector3(c.x + 0.0, c.y + 0.0, c.z + 0.0)) <= (c.radius or 3.0) then
+            if #(coords - vecOf(c)) <= (c.radius or 3.0) then
                 -- A charger with a price gives nothing until it has been paid for. A free one
                 -- answers true without anything being stored, so a server that never sets a
                 -- price behaves exactly as it did before paid charging existed.
@@ -6901,6 +6918,88 @@ local function pushLocale(src, player)
     state:set('lang', GetConvar('phone_locale', LOCALE_FALLBACK or 'fr'), true)
 end
 
+-- ══════════════════════════════════════════════════════════════
+-- While you were away
+-- ══════════════════════════════════════════════════════════════
+-- [source] = true once this session has been told, so a second hydration (a reconnect handled
+-- twice, the restart pass meeting a load event) does not announce the same thing again.
+local CaughtUp = {}
+
+--- What arrived for this character since they last disconnected.
+---
+--- **Only what landed after the last disconnect.** Counting every unread row would re-announce
+--- the same message at every connect until it was opened, which is how a notification becomes
+--- something people learn to ignore. The disconnect time is written by the drop handler below.
+---
+--- One pass of four counting queries, once per session, on an already indexed column. It costs
+--- nothing next to what the player is about to do anyway.
+local function catchUp(src, p)
+    local cfg = Config.CatchUp or {}
+    if cfg.enabled == false then return end
+    if not p or not p.citizenid then return end
+
+    local since = tonumber(Bridge.KvGet(p.citizenid, 'lastOut')) or 0
+    if since <= 0 then
+        since = os.time() - math.max(1, math.floor(tonumber(cfg.firstRunHours) or 24)) * 3600
+    end
+
+    local cid = p.citizenid
+    local function count(sql, args)
+        local ok, n = pcall(function() return MySQL.scalar.await(sql, args) end)
+        return (ok and tonumber(n)) or 0
+    end
+
+    local msgs = count([[SELECT COUNT(*) FROM vphone_messages
+        WHERE to_cid = ? AND seen = 0 AND at > FROM_UNIXTIME(?)]], { cid, since })
+    local calls = count([[SELECT COUNT(*) FROM vphone_calls
+        WHERE citizenid = ? AND direction = 'in' AND answered = 0 AND at > FROM_UNIXTIME(?)]],
+        { cid, since })
+    local mail = count([[SELECT COUNT(*) FROM vphone_mail_box b
+        JOIN vphone_mail m ON m.id = b.mail_id
+        JOIN vphone_mail_accounts a ON a.address = b.address
+         AND a.citizenid = ? AND a.deleted_at IS NULL
+        WHERE b.folder = 'inbox' AND b.seen = 0 AND m.at > FROM_UNIXTIME(?)]], { cid, since })
+    local social = count([[SELECT COUNT(*) FROM vphone_social_notifs
+        WHERE to_cid = ? AND seen = 0 AND at > FROM_UNIXTIME(?)]], { cid, since })
+
+    if msgs + calls + mail + social == 0 then return end
+
+    local has = requireItem(src)
+    local away = L(src, 'ph.away_title')
+    local function tell(app, key, n)
+        if n <= 0 then return end
+        TriggerClientEvent('v-phone:client:banner', src, {
+            app = app, title = away,
+            body = (L(src, key)):format(n), hasItem = has,
+        })
+    end
+    -- One card per app, rather than one summary: each opens the app it is about, which is what
+    -- somebody reading "three messages" wants to do next.
+    tell('messages', 'ph.away_messages', msgs)
+    tell('phone', 'ph.away_calls', calls)
+    tell('mail', 'ph.away_mail', mail)
+    tell('bleeter', 'ph.away_social', social)
+end
+
+--- Scheduled rather than immediate: a banner during the spawn or the character selection is a
+--- banner nobody sees.
+local function scheduleCatchUp(src, p)
+    if CaughtUp[src] then return end
+    CaughtUp[src] = true
+    local cfg = Config.CatchUp or {}
+    if cfg.enabled == false then return end
+    local wait = math.max(1, math.floor(tonumber(cfg.delaySeconds) or 45)) * 1000
+    CreateThread(function()
+        Wait(wait)
+        -- Gone in the meantime, or swapped character: nothing to say to them.
+        if GetPlayerName(src) == nil then return end
+        local still = (Core.GetPlayerReal or Core.GetPlayer)(src)
+        if not still or still.citizenid ~= p.citizenid then return end
+        local ok, err = pcall(catchUp, src, still)
+        if not ok then print('[v-phone] catch-up: ' .. tostring(err)) end
+    end)
+end
+
 local function hydratePlayer(src, player)
     if not player then return end
     pushLocale(src, player)
@@ -6919,6 +7018,7 @@ local function hydratePlayer(src, player)
     end
     TriggerClientEvent('v-phone:client:prefsSync', src, prefsOf(player))
     pushPower(src)
+    scheduleCatchUp(src, player)
 end
 
 AddEventHandler('v-core:server:onPlayerLoaded', function(src, player)
@@ -6959,6 +7059,10 @@ AddEventHandler('playerDropped', function()
     if p and Battery[src] then
         Bridge.KvSetSync(p.citizenid, 'battery', math.floor(Battery[src]))
     end
+    -- The moment "while you were away" starts counting from. Written for every character who
+    -- leaves, with or without a battery level to save.
+    if p then Bridge.KvSetSync(p.citizenid, 'lastOut', os.time()) end
+    CaughtUp[src] = nil
     BatterySaved[src] = nil
     if Bridge.SetHere then Bridge.SetHere(src, nil) end
     Battery[src], Signal[src], Charging[src], Open[src] = nil, nil, nil, nil

@@ -4,6 +4,48 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.2] - 2026-09-16
+
+### Added
+
+- **The phone says what you missed.** A short while after a character loads, it announces what
+  arrived while they were offline: unread messages, missed calls, unread mail and social
+  notifications. One card per app, so tapping it opens the app it is about. Only what landed
+  **after their last disconnect** is counted, so nothing a player has already read is announced
+  again at every connect. It obeys Do Not Disturb, a muted app and needing the handset on you,
+  like any other notification. `Config.CatchUp` sets whether it runs, how long after the load
+  (45 seconds by default) and the window used for a character with no recorded disconnect yet.
+
+### Performance
+
+- **The network and charging tick stops allocating.** It measured every player against every dead
+  zone and every charger by building a position for each row, for each player, twice a minute:
+  a few hundred short-lived objects a second on a busy server, all of which the collector pays
+  for. The rows do not move, so their positions are built once and kept.
+
+---
+
+### Ajouts (miroir francais)
+
+- **Le telephone dit ce que vous avez manque.** Peu apres le chargement d'un personnage, il
+  annonce ce qui est arrive pendant son absence : messages non lus, appels manques, mails non lus
+  et notifications sociales. Une carte par application, donc un appui ouvre l'application
+  concernee. Seul ce qui est arrive **apres sa derniere deconnexion** est compte, donc rien de
+  deja lu n'est reannonce a chaque connexion. Le mode ne pas deranger, une application muette et
+  l'obligation d'avoir le combine sur soi sont respectes comme pour toute notification.
+  `Config.CatchUp` regle son activation, le delai apres le chargement (45 secondes par defaut) et
+  la fenetre utilisee pour un personnage dont aucune deconnexion n'est encore enregistree.
+
+### Performances (miroir francais)
+
+- **La boucle reseau et recharge n'alloue plus.** Elle mesurait chaque joueur contre chaque zone
+  morte et chaque chargeur en construisant une position par ligne, pour chaque joueur, deux fois
+  par minute : quelques centaines d'objets ephemeres par seconde sur un serveur charge, tous a la
+  charge du ramasse-miettes. Ces lignes ne bougent pas : leurs positions sont construites une
+  fois et gardees.
+
+---
+
 ## [1.7.1] - 2026-09-13
 
 ### Fixed

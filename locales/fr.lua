@@ -1167,6 +1167,14 @@ local T = {
     ['ph.voicemail'] = "Repondeur",
     ['ph.no_voicemail'] = "Aucun message",
     ['ph.vm_new'] = "Nouveau message vocal",
+
+    -- Ce qui est arrive pendant que le personnage etait hors ligne, annonce une fois peu apres
+    -- son chargement.
+    ['ph.away_title']    = "Pendant votre absence",
+    ['ph.away_messages'] = "%d message(s) non lus",
+    ['ph.away_calls']    = "%d appel(s) manqués",
+    ['ph.away_mail']     = "%d mail(s) non lus",
+    ['ph.away_social']   = "%d nouvelle(s) notification(s)",
     ['ph.vm_new_short'] = "Nouveau",
     ['ph.vm_leave'] = "Laisser un message",
     ['ph.vm_leave_hint'] = "Personne n'a decroche. Laissez un message à",

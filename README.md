@@ -252,6 +252,9 @@ file itself explains each setting where the setting is.
 an image from), `DefaultGlass`, `Clock`, `Theme` (the accent and the system palette).
 
 **Talking**
+`CatchUp` (what the phone says a short while after a character loads: unread messages, missed
+calls, unread mail and social notifications that arrived while they were offline, counted from
+their last disconnect; `enabled`, `delaySeconds`, `firstRunHours`),
 `Messages`, `Mail` (addresses, reserved and bought domains, and `deleteAccounts`: whether a
 player may delete an address, which is then retired so nobody else can take it and receive its
 replies), `Cipher`, `Calls` (including `badSignal`, which is what makes one bar sound like one
@@ -1416,6 +1419,9 @@ en `auto`), `Settings`, `PhoneItem`, `PowerbankItem`, `DeviceSize`, `DeviceSide`
 joueur peut coller une image), `DefaultGlass`, `Clock`, `Theme` (l'accent et la palette système).
 
 **Communication**
+`CatchUp` (ce que le téléphone annonce peu après le chargement d'un personnage : messages non
+lus, appels manqués, mails non lus et notifications sociales arrivés pendant son absence, comptés
+depuis sa dernière déconnexion ; `enabled`, `delaySeconds`, `firstRunHours`),
 `Messages`, `Mail` (adresses, domaines réservés et achetés, et `deleteAccounts` : si un joueur
 peut supprimer une adresse, qui est alors retirée pour que personne d'autre ne puisse la prendre
 et recevoir ses réponses), `Cipher`, `Calls` (dont `badSignal`, ce qui fait qu'une barre s'entend comme une barre),

@@ -229,6 +229,16 @@ Locales = { fr = {}, en = {} }
 
 -- What server/main.lua keeps elsewhere in the file.
 Calls, CallOf = {}, {}
+-- The position of a configured row, built once (main.lua keeps this beside signalAt).
+local rowVec = setmetatable({}, { __mode = 'k' })
+function vecOf(row)
+    local v = rowVec[row]
+    if not v then
+        v = vector3((row.x or 0) + 0.0, (row.y or 0) + 0.0, (row.z or 0) + 0.0)
+        rowVec[row] = v
+    end
+    return v
+end
 function callPeers(c) return c.peers or {} end
 function endCall(id, why) ENDED[#ENDED + 1] = tostring(id) .. ':' .. tostring(why) end
 function prefsOf(p) p.GetMetadata('phone') return {} end

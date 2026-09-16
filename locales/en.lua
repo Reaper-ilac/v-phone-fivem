@@ -1179,6 +1179,13 @@ local T = {
     ['ph.voicemail'] = "Voicemail",
     ['ph.no_voicemail'] = "No messages",
     ['ph.vm_new'] = "New voicemail",
+
+    -- What arrived while the character was offline, said once a short while after they load.
+    ['ph.away_title']    = "While you were away",
+    ['ph.away_messages'] = "%d unread message(s)",
+    ['ph.away_calls']    = "%d missed call(s)",
+    ['ph.away_mail']     = "%d unread mail",
+    ['ph.away_social']   = "%d new notification(s)",
     ['ph.vm_new_short'] = "New",
     ['ph.vm_leave'] = "Leave a message",
     ['ph.vm_leave_hint'] = "Nobody picked up. Leave a message for",

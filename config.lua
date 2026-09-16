@@ -745,6 +745,28 @@ Config.Blocking = {
 }
 
 -- ── Messages ───────────────────────────────────────────────────
+-- ══════════════════════════════════════════════════════════════
+-- While you were away
+-- ══════════════════════════════════════════════════════════════
+-- A short while after a character loads, the phone says what arrived while they were offline:
+-- unread messages, missed calls, unread mail and social notifications. Only what landed AFTER
+-- their last disconnect is counted, so nothing a player has already read is announced twice.
+--
+-- It respects everything a notification respects: Do Not Disturb, a muted app, and needing the
+-- handset in your pocket when `Config.PhoneItem` is required.
+Config.CatchUp = {
+    enabled = true,
+
+    -- How long after the character loads. Long enough that it does not land in the middle of a
+    -- spawn or a character selection, short enough to still read as "what you missed".
+    delaySeconds = 45,
+
+    -- A character with no recorded disconnect - a brand new one, or one from before this
+    -- feature existed - would otherwise have its whole history counted. This is the window used
+    -- instead, in hours.
+    firstRunHours = 24,
+}
+
 Config.Messages = {
     maxLength   = 250,      -- characters
     pageSize    = 40,       -- messages loaded per conversation
