@@ -4,6 +4,17 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.3] - 2026-09-16
+
+### Fixed
+
+- **Anonymous gifts on Fruitee are anonymous again.** oxmysql returns `TINYINT(1)` columns as
+  booleans, and those flags were read as numbers, so every one fell back to its default. An
+  anonymous gift showed the giver's name, a closed page still took gifts, and a page could not
+  turn off messages or anonymous gifts.
+- The same reading fixed for OnlyFruits subscriber-only posts, disarmed exports and flagged
+  reminders.
+
 ## [1.7.2] - 2026-09-16
 
 ### Added
