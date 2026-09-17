@@ -255,7 +255,7 @@ small{display:block;color:#777;margin-top:14px;line-height:1.35}
 
     local function safeStaticPath(path)
         if type(path) ~= 'string' or path == '' then return nil end
-        if path:find('%.%.', 1, true) or path:find('\\', 1, true) then return nil end
+        if path:find('..', 1, true) or path:find('\\', 1, true) then return nil end
         if path:sub(1, 5) == 'html/' or path:sub(1, 5) == 'apps/' or path:sub(1, 7) == 'sounds/' then
             return path
         end
@@ -673,10 +673,10 @@ else
     end)
 
     RegisterNetEvent('v-phone:physical:invoke', function(requestId, callbackName, data)
-        if not physicalActive then
-            TriggerServerEvent('v-phone:physical:nuiReply', requestId, { error = 'session' })
-            return
-        end
+        -- The server only emits this event for a validated live physical session. Do not gate
+        -- it on the local mirror flag: the first browser callback can arrive in the same few
+        -- milliseconds as the session-on event, and event ordering across the HTTP/client paths
+        -- should not turn the phone's boot request into a false "session" error.
         if type(PhysicalInvokeNuiCallback) ~= 'function' then
             TriggerServerEvent('v-phone:physical:nuiReply', requestId, { error = 'bridge' })
             return
