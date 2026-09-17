@@ -14,17 +14,17 @@ if IsDuplicityVersion() then
     -- needs a pairing code and one button, so there is no reason to depend on request bodies.
 
     local PAIR_TTL = 600
-    local pairs = {}
+    local pairings = {}
     local byPlayer = {}
 
     math.randomseed(os.time() + GetGameTimer())
 
     local function cleanPairs()
         local t = os.time()
-        for code, entry in pairs do
+        for code, entry in pairs(pairings) do
             if not entry or entry.expires <= t or not GetPlayerName(entry.source) then
                 if entry and byPlayer[entry.source] == code then byPlayer[entry.source] = nil end
-                pairs[code] = nil
+                pairings[code] = nil
             end
         end
     end
@@ -33,7 +33,7 @@ if IsDuplicityVersion() then
         cleanPairs()
         for _ = 1, 50 do
             local code = tostring(math.random(100000, 999999))
-            if not pairs[code] then return code end
+            if not pairings[code] then return code end
         end
         return tostring(math.random(1000000, 9999999))
     end
@@ -43,10 +43,10 @@ if IsDuplicityVersion() then
         if not src or src <= 0 then return end
 
         local old = byPlayer[src]
-        if old then pairs[old] = nil end
+        if old then pairings[old] = nil end
 
         local code = newCode()
-        pairs[code] = { source = src, expires = os.time() + PAIR_TTL }
+        pairings[code] = { source = src, expires = os.time() + PAIR_TTL }
         byPlayer[src] = code
 
         TriggerClientEvent('v-phone:physical:pairCode', src, code, PAIR_TTL)
@@ -57,7 +57,7 @@ if IsDuplicityVersion() then
     AddEventHandler('playerDropped', function()
         local src = source
         local code = byPlayer[src]
-        if code then pairs[code] = nil end
+        if code then pairings[code] = nil end
         byPlayer[src] = nil
     end)
 
@@ -95,7 +95,7 @@ if IsDuplicityVersion() then
 
         local toggleCode = path:match('^/physical/toggle/(%d+)$')
         if toggleCode then
-            local entry = pairs[toggleCode]
+            local entry = pairings[toggleCode]
             if not entry or entry.expires <= os.time() or not GetPlayerName(entry.source) then
                 sendHtml(res, '<h1>Pairing expired</h1><p class="bad">Run <b>/physicalpair</b> again.</p>', 403)
                 return
@@ -107,7 +107,7 @@ if IsDuplicityVersion() then
 
         local code = path:match('^/physical/control/(%d+)$')
         if code then
-            local entry = pairs[code]
+            local entry = pairings[code]
             if not entry or entry.expires <= os.time() or not GetPlayerName(entry.source) then
                 sendHtml(res, '<h1>Pairing expired</h1><p class="bad">Run <b>/physicalpair</b> in FiveM and enter the new code.</p>', 403)
                 return
