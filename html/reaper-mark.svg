@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" role="img" aria-label="Reaper Made It grim reaper mark">
+  <defs>
+    <linearGradient id="hood" x1="0" y1="0" x2=".85" y2="1">
+      <stop offset="0" stop-color="#f3f6f8" stop-opacity=".74"/>
+      <stop offset=".42" stop-color="#aeb6c0" stop-opacity=".42"/>
+      <stop offset="1" stop-color="#4a515a" stop-opacity=".12"/>
+    </linearGradient>
+    <radialGradient id="mist" cx=".5" cy=".38" r=".66">
+      <stop offset="0" stop-color="#dce4eb" stop-opacity=".16"/>
+      <stop offset=".55" stop-color="#7f8995" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="eyeGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <ellipse cx="200" cy="194" rx="176" ry="170" fill="url(#mist)"/>
+  <path fill="url(#hood)" d="M200 35 C137 35 91 85 78 151 C67 209 86 259 119 292 C85 302 58 320 35 349 C80 368 133 376 200 376 C267 376 320 368 365 349 C342 320 315 302 281 292 C314 259 333 209 322 151 C309 85 263 35 200 35Z"/>
+  <path fill="#050607" fill-opacity=".96" d="M200 76 C154 76 118 113 113 164 C109 207 128 246 160 273 C173 284 187 294 200 303 C213 294 227 284 240 273 C272 246 291 207 287 164 C282 113 246 76 200 76Z"/>
+  <path fill="none" stroke="#dfe5ea" stroke-opacity=".18" stroke-width="8" stroke-linecap="round" d="M126 160 C131 112 159 91 200 91 C241 91 269 112 274 160"/>
+  <path fill="#eef5ff" fill-opacity=".86" filter="url(#eyeGlow)" d="M144 178 C162 167 180 165 194 172 C179 175 165 184 153 194 C148 190 145 184 144 178Z"/>
+  <path fill="#eef5ff" fill-opacity=".86" filter="url(#eyeGlow)" d="M256 178 C238 167 220 165 206 172 C221 175 235 184 247 194 C252 190 255 184 256 178Z"/>
+  <path fill="none" stroke="#d9e0e6" stroke-opacity=".12" stroke-width="7" stroke-linecap="round" d="M118 295 C145 315 171 327 200 333 C229 327 255 315 282 295"/>
+  <path fill="none" stroke="#cfd7df" stroke-opacity=".08" stroke-width="5" stroke-linecap="round" d="M84 332 C121 344 158 351 200 353 C242 351 279 344 316 332"/>
+  <path fill="none" stroke="#dce4eb" stroke-opacity=".10" stroke-width="6" stroke-linecap="round" d="M74 232 C40 242 34 267 55 282 M326 232 C360 242 366 267 345 282"/>
+</svg>
