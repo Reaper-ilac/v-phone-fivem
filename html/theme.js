@@ -76,7 +76,7 @@
   var splashTimer = null;
   var ready = false;
 
-  var ghost = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMDAgMzAwIj4KPGRlZnM+CiAgPGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+CiAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNkOGRkZTMiIHN0b3Atb3BhY2l0eT0iLjIyIi8+CiAgICA8c3RvcCBvZmZzZXQ9Ii41MiIgc3RvcC1jb2xvcj0iIzdiODI4YiIgc3RvcC1vcGFjaXR5PSIuMTAiLz4KICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzBiMGMwZiIgc3RvcC1vcGFjaXR5PSIuMDIiLz4KICA8L2xpbmVhckdyYWRpZW50Pgo8L2RlZnM+CjxwYXRoIGZpbGw9InVybCgjZykiIGQ9Ik0xNTAgMjhjLTQ2IDAtODIgMzAtOTYgNzZsMTgtMTFjLTcgMjEtOCA0NS0yIDY4bDE2LTE3YzAgMzYgMTQgNjcgNDEgOTVsMjMgMjQgMjMtMjRjMjctMjggNDEtNTkgNDEtOTVsMTYgMTdjNi0yMyA1LTQ3LTItNjhsMTggMTFjLTE0LTQ2LTUwLTc2LTk2LTc2eiIvPgo8cGF0aCBmaWxsPSIjZGZlNWViIiBmaWxsLW9wYWNpdHk9Ii4xMCIgZD0iTTEwNSAxMjFjMTAtMTMgMjUtMjEgNDUtMjFzMzUgOCA0NSAyMWMtMTItNS0yNy03LTQ1LTdzLTMzIDItNDUgN3oiLz4KPHBhdGggZmlsbD0iI2Y0ZjdmYiIgZmlsbC1vcGFjaXR5PSIuMTgiIGQ9Ik0xMTMgMTQ0bDIzLTggNyA5LTE3IDEwem03NCAwLTIzLTgtNyA5IDE3IDEweiIvPgo8cGF0aCBmaWxsPSIjZWVmM2Y3IiBmaWxsLW9wYWNpdHk9Ii4wOCIgZD0iTTE0MCAxNzVoMjBsLTEwIDE1eiIvPgo8cGF0aCBmaWxsPSJub25lIiBzdHJva2U9IiNmN2Y5ZmIiIHN0cm9rZS1vcGFjaXR5PSIuMTIiIHN0cm9rZS13aWR0aD0iMyIgZD0iTTkxIDExMWMxMy0zNSAzMS01MCA1OS01MHM0NiAxNSA1OSA1MCIvPgo8L3N2Zz4=';
+  var ghost = 'reaper-mark.svg';
 
   function installStyle() {
     if (document.getElementById('rmi-brand-style')) return;
@@ -169,9 +169,7 @@
         opacity: .92;
         filter: drop-shadow(0 12px 28px rgba(0,0,0,.55));
       }
-      .rmi-sigil path.main { fill: rgba(242,245,248,.90); }
-      .rmi-sigil path.cut { fill: #050607; }
-      .rmi-sigil path.eye { fill: rgba(255,255,255,.86); }
+      .rmi-sigil { object-fit: contain; }
       .rmi-maker {
         font: 750 21px/1.1 'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;
         letter-spacing: .20em;
@@ -199,6 +197,67 @@
         100% { opacity: 0; }
       }
       body.physical-handset .rmi-splash { border-radius: 0; }
+      .rmi-pairing {
+        position:absolute; inset:0; z-index:2147482990;
+        display:none; place-items:center; padding:22px;
+        background:rgba(2,3,4,.86);
+        backdrop-filter:blur(18px);
+        color:#f7f8f9;
+      }
+      .rmi-pairing.rmi-pairing-show { display:grid; }
+      .rmi-pair-card {
+        width:min(100%,320px);
+        border:1px solid rgba(255,255,255,.12);
+        border-radius:26px;
+        padding:20px 18px 18px;
+        background:linear-gradient(160deg,rgba(36,39,43,.97),rgba(10,11,13,.98));
+        box-shadow:0 28px 70px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.08);
+        text-align:center;
+        position:relative;
+      }
+      .rmi-pair-close {
+        position:absolute; right:11px; top:10px;
+        width:32px; height:32px; border-radius:50%;
+        background:rgba(255,255,255,.09);
+        color:#fff; font-size:20px; line-height:32px;
+      }
+      .rmi-pair-brand {
+        font:750 12px/1 'Segoe UI',system-ui,sans-serif;
+        letter-spacing:.18em; color:rgba(255,255,255,.50);
+        margin-bottom:8px;
+      }
+      .rmi-pair-title {
+        font:760 24px/1.12 'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;
+        margin:0 20px 7px;
+      }
+      .rmi-pair-copy {
+        color:rgba(235,238,242,.62);
+        font:500 13px/1.4 'Segoe UI',system-ui,sans-serif;
+        margin:0 auto 15px;
+        max-width:260px;
+      }
+      .rmi-pair-qr {
+        width:220px; height:220px; margin:0 auto 13px;
+        background:#fff; border-radius:18px; padding:10px;
+        display:grid; place-items:center; overflow:hidden;
+        box-shadow:0 8px 25px rgba(0,0,0,.38);
+      }
+      .rmi-pair-qr svg { width:100%; height:100%; display:block; }
+      .rmi-pair-code {
+        font:800 21px/1.1 ui-monospace,SFMono-Regular,Consolas,monospace;
+        letter-spacing:.18em; text-indent:.18em;
+      }
+      .rmi-pair-url {
+        margin-top:9px; color:rgba(235,238,242,.38);
+        font:500 9px/1.25 ui-monospace,SFMono-Regular,Consolas,monospace;
+        overflow-wrap:anywhere;
+      }
+      .rmi-pair-error {
+        border:1px solid rgba(255,80,80,.28);
+        border-radius:14px; padding:14px;
+        background:rgba(130,15,18,.20);
+        color:#ffb7b7; font:600 13px/1.4 'Segoe UI',system-ui,sans-serif;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -215,17 +274,94 @@
     splash.setAttribute('aria-hidden', 'true');
     splash.innerHTML = `
       <div class="rmi-splash-inner">
-        <svg class="rmi-sigil" viewBox="0 0 160 160" aria-hidden="true">
-          <path class="main" d="M80 13c-28 0-51 18-60 47l16-10c-6 18-6 36-1 53l12-13c1 23 10 42 28 60l5 5 5-5c18-18 27-37 28-60l12 13c5-17 5-35-1-53l16 10c-9-29-32-47-60-47z"/>
-          <path class="cut" d="M46 66c9-11 20-17 34-17s25 6 34 17c-10-4-21-6-34-6s-24 2-34 6zm16 19 16-7 6 8-13 9zm36 0-16-7-6 8 13 9zM74 111h12l-6 10z"/>
-          <path class="eye" d="M63 84l15-6 5 7-12 7zm34 0-15-6-5 7 12 7z"/>
-        </svg>
+        <img class="rmi-sigil" src="reaper-mark.svg" alt="" aria-hidden="true">
         <div class="rmi-maker">REAPER MADE IT</div>
         <div class="rmi-sub">FiveM Mobile Experience</div>
         <div class="rmi-hairline"></div>
       </div>`;
     screen.appendChild(splash);
     return splash;
+  }
+
+
+  function ensurePairOverlay() {
+    var screen = document.getElementById('screen');
+    if (!screen) return null;
+    var overlay = document.getElementById('rmi-pairing');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('section');
+    overlay.id = 'rmi-pairing';
+    overlay.className = 'rmi-pairing';
+    overlay.setAttribute('aria-label', 'ReaperLink physical phone pairing');
+    overlay.innerHTML = `
+      <div class="rmi-pair-card">
+        <button class="rmi-pair-close" type="button" aria-label="Close">&times;</button>
+        <div class="rmi-pair-brand">REAPER MADE IT</div>
+        <h2 class="rmi-pair-title">Pair Your Phone</h2>
+        <p class="rmi-pair-copy">Scan this code with your real phone. It opens and pairs automatically.</p>
+        <div class="rmi-pair-qr" id="rmi-pair-qr"></div>
+        <div class="rmi-pair-code" id="rmi-pair-code"></div>
+        <div class="rmi-pair-url" id="rmi-pair-url"></div>
+      </div>`;
+    screen.appendChild(overlay);
+    overlay.querySelector('.rmi-pair-close').addEventListener('click', function () {
+      overlay.classList.remove('rmi-pairing-show');
+    });
+    return overlay;
+  }
+
+  function renderPairQr(target, value) {
+    target.innerHTML = '';
+    if (!value || typeof qrcode !== 'function') return false;
+    try {
+      var qr = qrcode(0, 'M');
+      qr.addData(value);
+      qr.make();
+      target.innerHTML = qr.createSvgTag({
+        cellSize: 5,
+        margin: 4,
+        scalable: true,
+        alt: 'Scan to pair ReaperLink'
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function showPairing(data) {
+    var overlay = ensurePairOverlay();
+    if (!overlay) return;
+
+    var qr = document.getElementById('rmi-pair-qr');
+    var code = document.getElementById('rmi-pair-code');
+    var url = document.getElementById('rmi-pair-url');
+    var copy = overlay.querySelector('.rmi-pair-copy');
+
+    var pairUrl = String(data.url || '');
+    var configured = data.configured === true && pairUrl.length > 0;
+
+    code.textContent = String(data.code || '');
+    url.textContent = configured ? pairUrl : '';
+
+    if (configured && renderPairQr(qr, pairUrl)) {
+      qr.style.display = 'grid';
+      copy.className = 'rmi-pair-copy';
+      copy.textContent = 'Scan this code with your real phone. It opens and pairs automatically.';
+    } else {
+      qr.style.display = 'none';
+      copy.className = 'rmi-pair-copy rmi-pair-error';
+      copy.textContent = 'ReaperLink public URL is not configured on this server. The server owner must set reaperlink_public_url.';
+    }
+
+    overlay.classList.add('rmi-pairing-show');
+
+    clearTimeout(showPairing.timer);
+    var seconds = Math.max(10, Number(data.seconds) || 600);
+    showPairing.timer = setTimeout(function () {
+      overlay.classList.remove('rmi-pairing-show');
+    }, seconds * 1000);
   }
 
   function ensureBranding() {
@@ -257,6 +393,7 @@
   window.addEventListener('message', function (e) {
     var d = e.data || {};
     if (d.action === 'open') showSplash();
+    if (d.action === 'reaperlink:pairing') showPairing(d);
   });
 
   if (document.readyState === 'loading') {
