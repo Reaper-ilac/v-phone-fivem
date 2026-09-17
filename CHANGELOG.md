@@ -4,6 +4,20 @@ All notable changes to v-phone are documented here.
 
 ---
 
+## [1.7.4] - 2026-09-17
+
+### Added
+
+- **A boot summary in the console.** One framed block at start: the version, the framework,
+  the database, how many apps are configured, and which inventory, banking, garage and housing
+  scripts the phone picked. A missing oxmysql or a standalone start is flagged as a warning.
+
+### Fixed
+
+- **v-park compatibility.** v-park only spawns a parked car near a player, so the Garage app
+  could not find a car left across the map. With v-park started, the phone asks it where the
+  car stands before searching the world.
+
 ## [1.7.3] - 2026-09-16
 
 ### Fixed

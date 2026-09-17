@@ -1540,6 +1540,16 @@ function Bridge.Garages.LocatePlate(plate)
     local wanted = tostring(plate or ''):upper():gsub('%s', '')
     if wanted == '' then return nil end
 
+    -- v-park keeps a parked car in its own store and only spawns it near a player, so a car
+    -- left across the map is not in GetAllVehicles at all. Its record knows where it stands.
+    if GetResourceState('v-park') == 'started' then
+        local okPark, rec = pcall(function() return exports['v-park']:GetVehicleByPlate(plate) end)
+        local c = okPark and type(rec) == 'table' and rec.coords
+        if c and tonumber(c.x) and tonumber(c.y) then
+            return { x = tonumber(c.x), y = tonumber(c.y), z = tonumber(c.z) or 0.0 }
+        end
+    end
+
     local ok, result = pcall(function()
         for _, vehicle in ipairs(GetAllVehicles()) do
             if DoesEntityExist(vehicle) then
